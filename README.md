@@ -142,7 +142,9 @@ docs-suit 는 쓰기 전에 문서 종류와 읽는 사람, 말투에 맞춰 규
 
 ## 빠른 시작
 
-조립한 지침은 마크다운 한 장입니다. Claude Code, Codex, Cursor 같은 에이전트에는 스킬로 깔고, 웹 채팅에는 붙여 넣어 씁니다. 파이썬 3.9 이상만 있으면 됩니다.
+조립한 지침은 마크다운 한 장입니다. Claude Code 와 Codex, Antigravity CLI 같은 에이전트에는 스킬로 깔고, 웹 채팅에는 붙여 넣어 씁니다. Cursor 와 Grok Build 에도 깔 수 있지만, 스킬이 불리는지는 아직 확인하지 않았습니다.
+
+파이썬 3.9 이상만 있으면 되고, macOS 와 Linux 에서 확인했습니다. Windows 에서는 아직 확인하지 않아서 위의 웹 판으로 써 주세요. PDF 를 재려면 pdftotext 가 더 있어야 합니다.
 
 ```sh
 git clone https://github.com/dodokim-lab/docs-suit.git ~/docs-suit
@@ -154,9 +156,15 @@ python3 ~/docs-suit/suit.py bootstrap
 
 스킬은 깐 폴더에서만 불려서 다른 프로젝트의 글에는 끼어들지 않습니다. 다른 폴더에서도 쓰려면 그 폴더에서 `python3 ~/docs-suit/suit.py export --agent claude` 처럼 한 번 더 깝니다. 깐 스킬은 받은 폴더의 `suit.py` 를 부르니, 받은 폴더는 옮기거나 지우지 마세요.
 
+새 판은 `git -C ~/docs-suit pull` 로 받고, 스킬을 깐 폴더마다 `export` 를 다시 돌려야 스킬까지 새 판이 됩니다.
+
 ## 쓰는 법
 
-클래스 고르기와 지침 조립, 검사, 문체 배우기, 캐릭터 키우기는 [GUIDE.md](GUIDE.md) 에 있습니다.
+클래스 고르기와 지침 조립, 검사, 문체 배우기, 캐릭터 키우기는 [GUIDE.md](GUIDE.md) 에 있습니다. 새 판으로 올리는 법과 지우는 법도 같은 문서에 있습니다.
+
+## 기여와 보안 신고
+
+새 문서 종류나 테마 조합을 더하는 PR 을 받고, 머지되면 캐릭터의 3차와 4차 전직을 여는 승급 키를 드립니다. 받는 자리와 자동 판정, 승급 키는 [CONTRIBUTING.md](CONTRIBUTING.md) 에 있습니다. 보안 취약점은 공개 이슈 대신 [SECURITY.md](SECURITY.md) 의 비공개 신고로 보내 주세요.
 
 ## 만든 사람
 
