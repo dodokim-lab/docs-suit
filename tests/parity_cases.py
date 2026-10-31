@@ -35,6 +35,10 @@ for i, (cls, kind) in enumerate(itertools.product([None] + list(th.classes), [No
         rv = suit.review(th, kind, auds or None, ex["sets"], prof, cls, ex["chars"], talk=talk, voice=ex["voice"])
         cases.append({"cls": cls, "kind": kind, "auds": auds, "profile": prof, **ex, "talk": talk, "expected": text,
                       "review": rv})
+# 슬롯 파일에 constructor 같은 이름이 와도 웹은 파이썬의 dict 처럼 제 키만 본다. in 으로 견주면 물려받은 속성을 값으로 받는다
+odd = {"defaults": {"register": "constructor", "voice": "toString"}, "kinds": {"email": {"length": "hasOwnProperty"}}}
+cases.append({"cls": None, "kind": "email", "auds": [], "profile": odd, **extras[0], "talk": False,
+              "expected": suit.compose(th, "email", None, {}, odd)[0], "review": suit.review(th, "email", None, {}, odd)})
 # 웹 캐릭터 만들기가 내려받게 하는 슬롯 파일. suit.py 가 읽는 꼴과 같아야 한다.
 slots = [
     {"profile": {"class": "office", "lang": "ko", "agents": ["claude", "codex"]},
@@ -59,6 +63,7 @@ looks = [({}, None), ({"look": {"base": "b"}}, 0), ({"look": {"color": "wine", "
          ({"profile": {"class": "student"}}, 4), ({"profile": office}, 1),
          ({"profile": {"class": "researcher"}, "look": {"prop": "glasses", "color": "none"}}, 4),
          ({"profile": {"class": "planner"}, "look": {"prop": "none"}}, 3)]
+looks.append(({"look": {"base": "constructor", "top": "toString", "prop": "valueOf", "color": "hasOwnProperty"}}, 4))
 look_cases = [{"slot": slot, "tier": tier, "look": suit.look_of(th, slot, tier),
                "expected": suit.look_grid(th, suit.look_of(th, slot, tier))} for slot, tier in looks]
 json.dump({"compose": cases, "slots": slot_cases, "looks": look_cases}, sys.stdout, ensure_ascii=False)

@@ -66,6 +66,9 @@
     const m = sample.match(/```json\n([\s\S]*?)\n```/);
     let t = {};
     try { t = JSON.parse(m[1]); } catch (e) { /* 색 정보가 없으면 기본색으로 그린다 */ }
+    // style 속성에 넣는 값이라 #rrggbb 꼴의 색만 받는다. 기여받은 보기에 다른 CSS 를 끼워 넣지 못하게 한다
+    if (!t || typeof t !== "object") t = {};
+    for (const k of ["bg", "ink", "muted", "accent"]) if (!/^#[0-9a-fA-F]{3,8}$/.test(String(t[k] || ""))) t[k] = "";
     const head = t.head === "serif" ? "'Noto Serif KR', 'AppleMyungjo', serif" : "inherit";
     return `<span class="deck" style="display:flex;background:${esc(t.bg)};color:${esc(t.ink)}">
       <span class="s" style="color:${esc(t.muted)}">정류장 대기 조사</span>

@@ -52,7 +52,7 @@
 
   function buildClasses() {
     $("classes").innerHTML = Object.keys(T.classes).map((c) =>
-      `<button type="button" class="pick" data-cls="${c}" aria-pressed="${c === state.cls}"><canvas></canvas><b>${esc(T.classes[c].label)}</b></button>`).join("");
+      `<button type="button" class="pick" data-cls="${esc(c)}" aria-pressed="${c === state.cls}"><canvas></canvas><b>${esc(T.classes[c].label)}</b></button>`).join("");
     $("classes").querySelectorAll("[data-cls]").forEach((b) => draw(b.querySelector("canvas"), gridOf(b.dataset.cls, 4), 3));
     $("stage").innerHTML = [0, 1, 2, 3, 4].map((t) => `<figure><canvas></canvas><figcaption>${esc(C.titleOf(state.cls, t))}</figcaption></figure>`).join("");
     $("stage").querySelectorAll("canvas").forEach((cv, t) => draw(cv, gridOf(state.cls, t), t === 4 ? 4 : 3));
@@ -63,7 +63,7 @@
     $("trials").innerHTML = trialsOf(state.cls).map((k) => {
       const t = T.trials[k];
       const sub = `읽는 사람 ${T.audiences[t.audience].label}`;
-      return `<button type="button" class="opt" data-trial="${k}" aria-pressed="${k === state.trial}"><b>${esc(t.label)}</b><span class="d">${esc(sub)}</span></button>`;
+      return `<button type="button" class="opt" data-trial="${esc(k)}" aria-pressed="${k === state.trial}"><b>${esc(t.label)}</b><span class="d">${esc(sub)}</span></button>`;
     }).join("") + `<button type="button" class="opt" data-trial="${FREE}" aria-pressed="${state.trial === FREE}"><b>자유 형식</b><span class="d">형식과 말투를 요청에 적은 대로</span></button>`;
   }
 
@@ -147,7 +147,8 @@
     T = data;
     C = ThemeCore(T);
     wire();
+    // 주소의 ?class= 는 아무 글자나 올 수 있다. constructor 같은 이름이 객체의 물려받은 속성으로 잡히지 않게 제 키만 본다
     const want = new URLSearchParams(location.search).get("class");
-    pickClass(want in T.classes ? want : "office");
+    pickClass(want && Object.hasOwn(T.classes, want) ? want : "office");
   }).catch(() => { $("status").textContent = "themes.json 을 읽지 못했습니다."; });
 })();

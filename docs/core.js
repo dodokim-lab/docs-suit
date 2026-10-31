@@ -1,5 +1,6 @@
 // 테마 조립 핵심. suit.py 의 resolve 와 compose 를 같은 순서로 옮겼다. 브라우저와 node 가 같이 쓴다.
 // tests/parity.js 가 두 쪽의 출력이 글자 하나까지 같은지 확인한다.
+// 슬롯 파일과 주소에서 온 이름은 Object.hasOwn 으로 견준다. in 은 constructor 같은 물려받은 속성도 참으로 보아 파이썬의 dict 와 달라진다.
 (function (root) {
   "use strict";
   function make(T) {
@@ -55,7 +56,7 @@
           [pDef[axis], "profile"], [fromAudiences(axis, auds, T.audiences), "audience"], [cDef[axis], "class"], [T.defaults[axis], "default"]];
         for (const [c, s] of chain) {
           if (!c) continue;
-          if (s.startsWith("profile") && !(c in T.axes[axis].values)) continue;
+          if (s.startsWith("profile") && !Object.hasOwn(T.axes[axis].values, c)) continue;
           out[axis] = [c, s];
           break;
         }
@@ -212,7 +213,7 @@
     function lookOf(slot, tier) {
       const have = (slot && slot.look) || {};
       const bases = T.look.base || {};
-      const base = have.base in bases ? have.base : Object.keys(bases)[0];
+      const base = have.base && Object.hasOwn(bases, have.base) ? have.base : Object.keys(bases)[0];
       const look = { base, top: "shirt", hair: (bases[base] || {}).hair, prop: null, color: null };
       const tables = { top: T.look.top, hair: T.look.hair, prop: T.look.prop, color: T.look.colors };
       const cls = ((slot && slot.profile) || {}).class;
@@ -221,7 +222,7 @@
       for (const part of ["top", "hair", "prop", "color"]) {
         const val = have[part];
         if (val === "none" && (part === "prop" || part === "color")) continue;
-        if (val && tables[part] && val in tables[part] && opened[part].has(val)) {
+        if (val && tables[part] && Object.hasOwn(tables[part], val) && opened[part].has(val)) {
           look[part] = val;
           continue;
         }
