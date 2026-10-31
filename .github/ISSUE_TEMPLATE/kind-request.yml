@@ -1,0 +1,51 @@
+name: 문서 종류 요청
+description: 아직 없는 문서 종류의 틀을 더해 달라고 할 때
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        지금 있는 문서 종류는 `python3 suit.py list` 로 봅니다. 직접 만들어 PR 로 보내려면 CONTRIBUTING.md 를 봐 주세요.
+        회사 이름과 실제 사람 이름, 내부 정보는 빼고 적습니다. 공개 저장소입니다.
+  - type: input
+    id: name
+    attributes:
+      label: 문서 종류 이름
+      placeholder: 예) 인수인계서
+    validations:
+      required: true
+  - type: textarea
+    id: who
+    attributes:
+      label: 누가 누구에게 쓰는 글인가요
+      placeholder: 예) 팀을 옮기는 사람이 다음 담당자에게 남긴다
+    validations:
+      required: true
+  - type: dropdown
+    id: class
+    attributes:
+      label: 이 글을 가장 자주 쓸 클래스
+      options:
+        - 학생
+        - 취업 준비생
+        - 대학원생·연구자
+        - 개발자
+        - 기획자·PM
+        - 직장인
+        - 크리에이터
+        - 의사·의료인
+        - 전문직·자격사
+        - 잘 모르겠음
+    validations:
+      required: true
+  - type: textarea
+    id: sections
+    attributes:
+      label: 꼭 들어가야 할 절
+      description: 이 글을 받는 사람이 늘 찾는 내용입니다.
+      placeholder: 예) 하던 일, 남은 일, 물어볼 곳, 주의할 점
+  - type: textarea
+    id: example
+    attributes:
+      label: 참고할 예시나 양식
+      description: 지어낸 내용이나 공개된 양식으로 적습니다.
