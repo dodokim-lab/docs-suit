@@ -23,7 +23,7 @@ tells:
   spelling: {layer: error, label: 맞춤법, ai: false, re: "됬|되요|되서|몇일|어떻해|어떡게|왠만|왠일|웬지|금새|희안|역활|설겆이|어의(?:가 )?없|오랫만|일일히|깨끗히|틈틈히|곰곰히|번번히|[할줄볼갈올낼둘쓸릴일될칠킬질을울]께(?:요)?(?![가-힣])|(?:할|갈|볼)려고|않돼", hint: "맞춤법대로 고친다. 됐다, 돼요, 며칠, 웬만, 웬일, 왠지, 금세, 희한, 역할, 어이없다, 오랜만, 깨끗이, 할게, 하려고, 않아 처럼 쓴다"}
   secret: {layer: error, label: 비밀값, re: "\b(?:sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|xox[abp]-[A-Za-z0-9-]{10,})|(?:비밀번호|패스워드|password|passwd)\s*[:=]\s*\S{4,}", raw: true, hint: 키와 비밀번호는 문서에서 빼고 따로 전한다}
 
-  contact: {layer: suggest, label: 연락처, re: "01[016789][- .]?[0-9]{3,4}[- .]?[0-9]{4}|[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+\.[A-Za-z.]{2,}", raw: true, exposure: public, hint: 인터넷에 공개해도 되는 연락처인지 확인한다}
+  contact: {layer: suggest, label: 연락처, re: "01[016789][- .]?[0-9]{3,4}[- .]?[0-9]{4}|(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]+\.[A-Za-z.]{2,}", raw: true, exposure: public, hint: 인터넷에 공개해도 되는 연락처인지 확인한다}
   not-but: {layer: suggest, label: X 가 아니라 Y 대구, re: "아니라", min: 2, hint: 대구는 한 번만 남기고 나머지는 주장으로 바로 쓴다}
   beyond: {layer: suggest, label: 단순한 X 를 넘어, re: "단순(?:한|히) [^.\n]{1,20}?(?:을|를) 넘어", hint: 넘어선다는 말 대신 무엇을 하는지 쓴다}
   cleft: {layer: suggest, label: 중요한 것은, re: "(?:중요한|필요한|핵심적인|주목할) (?:것은|점은)", hint: 중요한 그것을 주어로 바로 주장한다}
