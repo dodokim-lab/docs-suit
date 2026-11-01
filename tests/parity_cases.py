@@ -47,8 +47,15 @@ slots = [
      "look": {"hair": "long"}, "defaults": {"register": "polite", "length": "brief"},
      "audiences": {"manager": {"register": "haeyo"}}},
     {"profile": {"class": "student", "lang": "ko"}, "persona": {}, "defaults": {}},
+    # 줄을 가르는 제어 문자가 섞인 값. 두 쪽 다 빈칸으로 바꿔 한 줄로 남겨야 새 키가 생기지 않는다
+    {"profile": {"class": "office"}, "persona": {"call": "민수\rdefaults:", "goal": "a\U00002028b\U00002029c\x85d",
+                                                 "facts": "\U0000feff앞\x00뒤\x1c", "docs": ["e\x0bmail"]}},
 ]
 slot_cases = [{"data": d, "expected": suit.dump_yaml(d)} for d in slots]
+# 웹 캐릭터 만들기가 페르소나 답을 한 줄로 다듬는 규칙
+raw_texts = ['민수 "님"\n  2년 차', "a\U00002028b\U00002029c\x85d\x1ce", "\U0000feff앞\x00뒤\t끝\xa0\U00003000",
+             "\x7f\x9f줄\r\n바꿈 \x0b\x0c"]
+text_cases = [{"raw": t, "expected": suit.clean_text(t)} for t in raw_texts]
 # 웹이 그리는 캐릭터. 기본 몸에 옷, 머리, 소품을 겹치고, 클래스가 그 차수까지 열지 않은 꾸미기는 기본값으로 둔다.
 office = {"class": "office"}
 looks = [({}, None), ({"look": {"base": "b"}}, 0), ({"look": {"color": "wine", "hair": "bangs"}}, 1),
@@ -66,4 +73,4 @@ looks = [({}, None), ({"look": {"base": "b"}}, 0), ({"look": {"color": "wine", "
 looks.append(({"look": {"base": "constructor", "top": "toString", "prop": "valueOf", "color": "hasOwnProperty"}}, 4))
 look_cases = [{"slot": slot, "tier": tier, "look": suit.look_of(th, slot, tier),
                "expected": suit.look_grid(th, suit.look_of(th, slot, tier))} for slot, tier in looks]
-json.dump({"compose": cases, "slots": slot_cases, "looks": look_cases}, sys.stdout, ensure_ascii=False)
+json.dump({"compose": cases, "slots": slot_cases, "looks": look_cases, "texts": text_cases}, sys.stdout, ensure_ascii=False)
