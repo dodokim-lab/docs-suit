@@ -95,6 +95,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from xml.parsers import expat
 
+VERSION = "0.2.0"
 HERE = Path(__file__).resolve().parent
 DEFAULT_LANG = "ko"
 AXES_ORDER = ("visual-doc", "visual-deck", "voice", "register", "terms", "skeleton", "length",
@@ -5049,6 +5050,7 @@ def main(argv=None):
         except OSError:
             pass
     ap = argparse.ArgumentParser(prog="suit.py", description="docs-suit: 문서에 옷을 입히는 AI 글쓰기 테마 엔진")
+    ap.add_argument("--version", action="version", version=f"docs-suit {VERSION}")
     sub = ap.add_subparsers(dest="cmd", required=True)
     slot = argparse.ArgumentParser(add_help=False)
     slot.add_argument("--profile", metavar="슬롯", help="이 슬롯의 프로필을 쓴다. 폴더 파일과 profile use 보다 앞선다")
