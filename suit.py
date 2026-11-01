@@ -919,7 +919,8 @@ def doc_file_text(path):
     if ext == ".pdf":
         if not shutil.which("pdftotext"):
             raise ValueError("PDF 를 읽으려면 pdftotext(poppler) 가 있어야 한다. 원본 문서 파일을 넘겨도 된다")
-        out = subprocess.run(["pdftotext", "-enc", "UTF-8", str(path), "-"], capture_output=True, text=True)
+        out = subprocess.run(["pdftotext", "-enc", "UTF-8", str(path), "-"], capture_output=True, encoding="utf-8",
+                             errors="replace")
         if out.returncode:
             raise ValueError(f"PDF 를 읽지 못했다: {out.stderr.strip()}")
         return "\n".join(ln.strip() for ln in out.stdout.replace("\f", "\n---\n").splitlines() if ln.strip()), True
@@ -1296,11 +1297,12 @@ def growth_path(name=None, start=None):
 
 
 def growth_on(slot_data):
-    """슬롯이 있고 growth 를 끄지 않았으면 켜져 있다. set 으로만 만든 슬롯에는 profile 절이 없을 수 있다."""
-    if not slot_data:
+    """클래스를 고른 슬롯이 캐릭터다. 캐릭터이고 growth 를 끄지 않았으면 켜져 있다.
+    bootstrap 전에 set 으로 먼저 만든 슬롯에는 클래스가 없어, 기록을 남기지 않고 상태 줄에도 그리지 않는다."""
+    meta = (slot_data or {}).get("profile")
+    if not isinstance(meta, dict) or not meta.get("class"):
         return False
-    meta = slot_data.get("profile")
-    return not (isinstance(meta, dict) and str(meta.get("growth")) == "off")
+    return str(meta.get("growth")) != "off"
 
 
 def read_growth(path, warn=lambda m: None):
@@ -1842,7 +1844,9 @@ def card_lines(th, slot_data, slot, state, depth, vals=None, held=(), stacked=Fa
         info.append("전직을 모두 마쳤다")
     if vals:
         info.append("지금 테마 " + " · ".join(th.label(ax, vals[ax][0]) for ax in ("register", "voice", "length")))
-    if not growth_on(slot_data):
+    if not cls:
+        info.append("클래스를 아직 고르지 않아 캐릭터가 자라지 않는다. suit.py bootstrap 으로 고른다")
+    elif not growth_on(slot_data):
         info.append("캐릭터 키우기가 꺼져 있다. 켜려면 suit.py growth on")
     if not depth or not th.look:
         return info
@@ -1939,9 +1943,14 @@ def bundle_text(th):
 
 
 # ---------------------------------------------------------------- 내보내기
+def engine_run():
+    """SKILL.md 와 안내 문구에 적는 엔진 명령. 에이전트와 사용자가 아무 폴더에서나 그대로 붙여 넣게 절대 경로로 쓰고,
+    경로에 빈칸이나 따옴표가 있어도 셸이 한 낱말로 읽게 감싼다."""
+    return "python3 " + shlex.quote(str(HERE / "suit.py"))
+
+
 def skill_text(th):
-    suit = HERE / "suit.py"
-    run = f"python3 {suit}"
+    run = engine_run()
     kinds = ", ".join(f"`{k}` {v['label']}" for k, v in th.kinds.items())
     auds = ", ".join(f"`{k}` {v['label']}" for k, v in th.audiences.items())
     axes = "; ".join(f"`{a}` {th.axes[a]['label']}: " + ", ".join(f"`{v}` {lab}" for v, lab in th.axes[a]["values"].items())
@@ -2029,7 +2038,7 @@ def export_folder(folder=None):
     if f == Path.home().resolve():
         raise Missing("홈 폴더에는 스킬을 깔지 않는다. 홈 폴더의 스킬은 모든 폴더에서 불린다. 글을 쓰는 폴더로 옮겨 부른다")
     if f == HERE or HERE in f.parents:
-        raise Missing(f"docs-suit 저장소 안에는 스킬을 깔지 않는다. 글을 쓰는 폴더로 옮겨 `python3 {HERE / 'suit.py'} …` 로 다시 부른다")
+        raise Missing(f"docs-suit 저장소 안에는 스킬을 깔지 않는다. 글을 쓰는 폴더로 옮겨 `{engine_run()} …` 로 다시 부른다")
     return f
 
 
@@ -2061,7 +2070,7 @@ def git_exclude(folder, dirs, remove=False):
     팀 저장소에 커밋되면 다른 사람에게 번진다. exclude 는 저장소에 올라가지 않는다. git 이 없거나 작업 트리가 아니면 None 이다."""
     try:
         r = subprocess.run(["git", "-C", str(folder), "rev-parse", "--show-toplevel", "--git-path", "info/exclude"],
-                           capture_output=True, text=True, timeout=5)
+                           capture_output=True, encoding="utf-8", errors="surrogateescape", timeout=5)
     except (OSError, subprocess.SubprocessError):
         return None
     out = r.stdout.splitlines()
@@ -2118,7 +2127,7 @@ def export(th, agents, dest=None, dry_run=False, profile=None, say=print, voice=
         left = [p for p in old_home_skills() if made_by_export(p)]
         if left:
             say(f"예전 판이 홈 폴더에 깐 스킬이 남아 있다: {', '.join(map(str, left))}. 이 스킬은 모든 폴더에서 불리니 "
-                f"`python3 {HERE / 'suit.py'} export --remove --global` 로 거둔다")
+                f"`{engine_run()} export --remove --global` 로 거둔다")
     return written
 
 
@@ -2263,14 +2272,37 @@ def cmd_bootstrap(a, th):
                                     for d in [read_slot(f)] if d]},
                          ensure_ascii=False, indent=1))
         return 0
-    if a.here and (not a.profile or a.profile == "default"):
+    talk = not (a.cls or a.yes)
+    if a.here and (a.profile == "default" or not (talk or a.profile)):
         raise Missing("--here 는 이 폴더에 적을 슬롯 이름을 --profile 로 함께 준다. 제안 이름은 bootstrap --questions 의 slot 이다")
-    p = profile_path(a.profile)
-    if p.exists() and not a.force:
-        print(f"이미 프로필이 있다: {p}\n다시 만들려면 --force 를 붙인다. 지금 프로필은 `suit.py profile` 로 본다.")
+    if talk and not sys.stdin.isatty():
+        raise Missing("대화형 입력을 받을 수 없다. --class 와 --yes 로 진행한다")
+    slot, folder = a.profile, None
+    if talk and not os.environ.get("DOCS_SUIT_PROFILE") and slot != "default":
+        # 대화로 만들 때도 에이전트가 하는 세팅처럼 글을 쓰는 폴더의 이름으로 새 슬롯을 만들어 그 폴더에 잇는다.
+        # 기본 슬롯에 만들면 상태 줄이 비고, 대시보드가 이 폴더에 캐릭터가 없다며 또 만들자고 한다
+        folder = writing_folder()
+        if folder and not slot:
+            path, bound, _, why = profile_source(None, start=folder)
+            if why == "folder" and slot_class(read_slot(path)) and not a.force:
+                print(f"{folder} 는 이미 슬롯 {bound} 의 캐릭터를 쓴다: {path}\n"
+                      f"다시 만들려면 --force 를 붙인다. 지금 프로필은 `{engine_run()} profile` 로 본다.")
+                return 1
+            if not a.force:
+                reuse = bootstrap_reuse(th, folder)
+                if reuse:
+                    print(f"\n폴더 파일 {bind_folder(reuse, folder)} 이 슬롯 {reuse} 을 쓴다. 이 폴더와 아래 폴더에서 이 캐릭터가 자란다")
+                    return 0
+            own = read_folder(folder / FOLDER_FILE).get("profile")
+            slot = own if isinstance(own, str) and SLOT_RE.match(own) else suggest_slot(folder)
+    p = profile_path(slot)
+    old = read_slot(p, warn_stderr)
+    # set 으로 먼저 만든 슬롯은 클래스가 없어 아직 캐릭터가 아니다. 덮어써도 되고, 남긴 축 값은 이어 받는다
+    if slot_class(old) and not a.force:
+        print(f"이미 프로필이 있다: {p}\n다시 만들려면 --force 를 붙인다. 지금 프로필은 `{engine_run()} profile` 로 본다.")
         return 1
     flags = {k: getattr(a, k) for k in PERSONA_IN_PROMPT}
-    if a.cls or a.yes:
+    if not talk:
         if not a.cls:
             raise Missing("--yes 로 진행할 때는 --class 가 필요하다")
         th.known_class(a.cls)
@@ -2285,17 +2317,18 @@ def cmd_bootstrap(a, th):
         agents = [x.strip() for x in a.agents.split(",") if x.strip()] if a.agents else []
         hair, preset = a.hair, a.preset
     else:
-        if not sys.stdin.isatty():
-            raise Missing("대화형 입력을 받을 수 없다. --class 와 --yes 로 진행한다")
         cls, persona, agents, hair, preset = bootstrap_interactive(th)
-        a.talk = True
     skills = [x for x in expand_agents(agents) if x != "web"]
     if hair and hair not in (th.look.get("hair") or {}):
         raise Missing(f"모르는 머리 모양: {hair}. 고를 수 있는 것은 {', '.join(th.look.get('hair') or {})}")
-    # 스킬은 글을 쓰는 폴더에 깐다. 지금 폴더에 깔 수 없으면 묻고, 답하지 않으면 웹 지침만 만든다
-    where = install_folder(not (a.cls or a.yes)) if skills else None
+    # 스킬은 글을 쓰는 폴더에 깐다. 대화로 만들 때는 처음에 정한 폴더이고, 정하지 않았으면 웹 지침만 만든다
+    where = (folder if talk else export_folder()) if skills else None
     install = agents if where or not skills else [x for x in agents if x == "web"]
+    # --here 는 스킬을 깐 폴더, 곧 글을 쓰는 폴더에 잇는다. 프로필을 쓰기 전에 그 폴더를 잴 수 있는지 먼저 본다
+    bind_to = folder if talk else (where or export_folder()) if a.here else None
     data = {"profile": {"class": cls, "lang": DEFAULT_LANG}, "persona": persona}
+    if not slot_class(old):
+        data.update({k: old[k] for k in ("defaults", "audiences", "kinds", "words") if isinstance(old.get(k), dict) and old[k]})
     if hair:
         data["look"] = {"hair": hair}
     if preset:
@@ -2306,36 +2339,36 @@ def cmd_bootstrap(a, th):
         data["profile"]["agents"] = agents
     if p.exists():
         p.with_name(p.name + ".bak").write_text(p.read_text(encoding="utf-8"), encoding="utf-8")
-    print(f"\n프로필을 저장했다: {write_profile(data, a.profile)}")
-    if a.here:
-        print(f"폴더 파일 {bind_folder(a.profile)} 이 슬롯 {a.profile} 을 쓴다. 이 폴더와 아래 폴더에서 이 캐릭터가 자란다")
+    print(f"\n프로필을 저장했다: {write_profile(data, slot)}")
+    if bind_to:
+        print(f"폴더 파일 {bind_folder(slot, bind_to)} 이 슬롯 {slot} 을 쓴다. 이 폴더와 아래 폴더에서 이 캐릭터가 자란다")
     written = []
     if install:
         place = f" 스킬은 {where} 에서 연 에이전트만 부른다." if where else ""
         if not a.yes and _ask(f"고른 도구에 스킬을 깔까?{place} [Y/n] ", "y").lower() not in ("y", "yes", "ㅛ"):
-            print(f"설치를 건너뛰었다. 나중에 글을 쓰는 폴더에서 `python3 {HERE / 'suit.py'} export --agent …` 로 깐다.")
+            print(f"설치를 건너뛰었다. 나중에 글을 쓰는 폴더에서 `{engine_run()} export --agent …` 로 깐다.")
         else:
-            written = export(th, install, profile=load_profile(name=a.profile), folder=where)
-    if not getattr(a, "talk", False):
-        print(f"\n이제 `python3 {HERE / 'suit.py'} compose --kind <종류>` 로 지침을 조립한다. "
-              f"종류는 `python3 {HERE / 'suit.py'} list` 로 본다.")
+            written = export(th, install, profile=load_profile(name=slot), folder=where)
+    if not talk:
+        print(f"\n이제 `{engine_run()} compose --kind <종류>` 로 지침을 조립한다. "
+              f"종류는 `{engine_run()} list` 로 본다.")
         return 0
     print()
-    cmd_card(argparse.Namespace(profile=a.profile, json=False, color="auto"), th)
-    print("\n" + "\n".join(bootstrap_next(th, cls, agents, written, where)))
+    cmd_card(argparse.Namespace(profile=slot, json=False, color="auto"), th)
+    print("\n" + "\n".join(bootstrap_next(th, cls, agents, written, where, None if bind_to else profile_source(slot)[1])))
     return 0
 
 
-def install_folder(interactive):
-    """bootstrap 이 스킬을 깔 폴더. 지금 폴더가 홈 폴더나 엔진 저장소면 글을 쓰는 폴더를 묻고, Enter 면 깔지 않는다."""
+def writing_folder():
+    """대화형 bootstrap 이 캐릭터를 잇고 스킬을 깔 폴더. 지금 폴더가 글을 쓰는 폴더면 그대로 쓰고, 홈 폴더나 엔진 저장소면
+    글을 쓰는 폴더를 묻는다. Enter 면 None 이고, 그때는 폴더에 잇지 않은 슬롯에 만든다."""
     try:
         return export_folder()
-    except Missing as e:
-        if not interactive:
-            raise
-        print(f"\n{e}")
+    except Missing:
+        print(f"\n지금 폴더 {Path.cwd()} 는 홈 폴더나 docs-suit 저장소라 캐릭터를 잇지 않는다. "
+              "캐릭터는 글을 쓰는 폴더마다 따로 키우고, 스킬도 그 폴더에 깐다.")
     while True:
-        ans = _ask("스킬을 깔 폴더, 곧 글을 쓰는 폴더의 경로를 적는다. Enter 면 깔지 않는다: ")
+        ans = _ask("글을 쓰는 폴더의 경로를 적는다. Enter 면 폴더에 잇지 않고 만든다: ")
         if not ans:
             return None
         try:
@@ -2344,9 +2377,25 @@ def install_folder(interactive):
             print(e)
 
 
-def bootstrap_next(th, cls, agents, written, where=None):
-    """터미널에서 캐릭터를 만든 사람에게 다음에 할 일을 고른 도구에 맞춰 알린다."""
-    run = f"python3 {HERE / 'suit.py'}"
+def bootstrap_reuse(th, folder):
+    """다른 폴더에서 만든 캐릭터가 있으면 그 캐릭터를 이 폴더에서도 키울지 묻는다. 고른 슬롯 이름이나 None.
+    에이전트가 하는 세팅의 첫 질문과 같다."""
+    names = ["default"] + sorted(f.stem for f in (config_dir() / "profiles").glob("*.yaml") if SLOT_RE.match(f.stem))
+    found = [(n, d) for n in names for d in [read_slot(slot_path(n))]
+             if isinstance(slot_class(d), str) and slot_class(d) in th.classes]
+    if not found:
+        return None
+    print(f"\n다른 폴더에서 만든 캐릭터가 있다. {folder} 에서도 그 캐릭터를 키우려면 번호를 고른다. "
+          "Enter 면 이 폴더의 새 캐릭터를 만든다.\n")
+    for i, (n, d) in enumerate(found, 1):
+        print(f"  {i}. {(d.get('persona') or {}).get('call') or n} · {th.classes[slot_class(d)]['label']} · 슬롯 {n}")
+    picked = _pick_numbers(_ask("\n번호를 고른다: "), [n for n, _ in found])
+    return picked[0] if picked else None
+
+
+def bootstrap_next(th, cls, agents, written, where=None, unbound=None):
+    """터미널에서 캐릭터를 만든 사람에게 다음에 할 일을 고른 도구에 맞춰 알린다. unbound 는 폴더에 잇지 않은 슬롯 이름이다."""
+    run = engine_run()
     ask = f"\"{th.kinds[th.classes[cls]['kinds'][0]]['label']} 써 줘\""
     tools = {"claude": "Claude Code", "codex": "Codex", "antigravity": "Antigravity", "cursor": "Cursor", "grok": "Grok Build"}
     picked = [tools[x] for x in agents if x in tools]
@@ -2363,6 +2412,9 @@ def bootstrap_next(th, cls, agents, written, where=None):
     if not written:
         out.append(f"- 스킬을 깔지 않았다. 글을 쓰는 폴더에서 `{run} export --agent claude` 처럼 쓰는 도구에 깔거나, "
                    f"`{run} compose --kind {th.classes[cls]['kinds'][0]}` 로 지침을 뽑아 AI 에 붙여 넣는다.")
+    if unbound:
+        out.append(f"- 캐릭터를 아직 폴더에 잇지 않았다. 글을 쓰는 폴더에서 `{run} profile use {unbound} --here` 를 돌리면 "
+                   "그 폴더의 상태 줄과 대시보드에 이 캐릭터가 뜬다.")
     out.append(f"- 캐릭터는 `{run} card` 로 다시 본다.")
     if picked and skills:
         out.append(f"- docs-suit 저장소 폴더 {HERE} 는 옮기거나 지우지 않는다. 깐 스킬이 이 폴더의 suit.py 를 부른다.")
@@ -2444,12 +2496,12 @@ def cmd_profile(a, th):
                 current.write_text(a.name + "\n", encoding="utf-8")
             print(f"이제 슬롯 {a.name} 을 쓴다. 폴더 파일이 있는 폴더에서는 폴더 파일이 앞선다")
         if not target.exists():
-            print(f"슬롯 {a.name} 은 아직 없다. `python3 suit.py bootstrap --profile {a.name}` 으로 만든다")
+            print(f"슬롯 {a.name} 은 아직 없다. `{engine_run()} bootstrap --profile {a.name}` 으로 만든다")
         return 0
     reason = {"env": "환경 변수 DOCS_SUIT_PROFILE", "arg": "--profile 인자", "folder": "폴더 파일",
               "current": "profile use 로 고른 슬롯", "default": "기본 슬롯"}[why]
     if not path.exists():
-        print(f"프로필이 없다: {path}\n`python3 suit.py bootstrap` 으로 만든다. 슬롯 {slot or '-'} ({reason})")
+        print(f"프로필이 없다: {path}\n`{engine_run()} bootstrap` 으로 만든다. 슬롯 {slot or '-'} ({reason})")
     else:
         print(f"# 슬롯 {slot or '-'}: {path} ({reason})\n")
         print(path.read_text(encoding="utf-8"))
@@ -2607,11 +2659,24 @@ def cmd_check(a, th):
     checks = check_doc(text, vals, a.chars, a.kind, th, profile.get("words"))
     hints = suggest_doc(th, text, vals, a.kind)
     left = len(UNRESOLVED.findall(text))
-    prev = last_check(a.profile, a.file, text, a.kind, warn_stderr)
+    # 성장 기록은 덤이다. Codex 샌드박스처럼 설정 폴더에 쓸 수 없는 곳에서도 검사 결과는 끝까지 내고, 기록만 못 남겼다고 한 줄 알린다
+    try:
+        prev = last_check(a.profile, a.file, text, a.kind, warn_stderr)
+    except (OSError, ValueError):
+        prev = None
     versus = compare_line(prev[0], prev[1], checks, len(hints), left) if prev else None
-    line = None if a.no_record else record_check(th, a.profile, a.file, text, a.kind, checks, left, warn_stderr,
-                                                 len(hints))
+
+    def record():
+        if a.no_record:
+            return None
+        try:
+            return record_check(th, a.profile, a.file, text, a.kind, checks, left, warn_stderr, len(hints))
+        except (OSError, ValueError) as e:
+            warn_stderr(f"성장 기록을 남기지 못했다. 검사 결과는 그대로 쓴다: {e}")
+            return None
+
     if a.json:
+        line = record()
         print(json.dumps({"checks": [{"axis": ax, "ok": ok, "got": got} for ax, ok, got in checks],
                           "suggest": [{"name": n, "label": lab, "got": got, "hint": h} for n, lab, got, h in hints],
                           "unresolved": left, "previous": versus, "growth": line}, ensure_ascii=False, indent=1))
@@ -2630,6 +2695,8 @@ def cmd_check(a, th):
         print(f"· [확인 필요] {left}곳이 남았다")
     if versus:
         print(versus)
+    sys.stdout.flush()
+    line = record()
     if line:
         print(line)
     return 0
@@ -2747,7 +2814,7 @@ def cmd_card(a, th):
     path, slot, _, _ = profile_source(a.profile)
     data = read_slot(path, warn_stderr)
     if not data:
-        print(f"프로필이 없다: {path}\n`python3 suit.py bootstrap` 으로 캐릭터를 만든다")
+        print(f"프로필이 없다: {path}\n`{engine_run()} bootstrap` 으로 캐릭터를 만든다")
         return 3
     held = promote_keys(warn_stderr)
     state = growth_state(th, class_growth(growth_path(a.profile), data, warn_stderr), key_tiers(held))
@@ -2768,7 +2835,7 @@ def cmd_look(a, th):
     path, slot, _, _ = profile_source(a.profile)
     data = read_slot(path, warn_stderr)
     if not data:
-        print(f"프로필이 없다: {path}\n`python3 suit.py bootstrap` 으로 캐릭터를 만든다")
+        print(f"프로필이 없다: {path}\n`{engine_run()} bootstrap` 으로 캐릭터를 만든다")
         return 3
     cls = slot_class(data)
     tier = growth_state(th, class_growth(growth_path(a.profile), data, warn_stderr),
@@ -2889,7 +2956,7 @@ def cmd_growth(a, th):
     path = profile_path(a.profile)
     data = read_slot(path, warn_stderr)
     if not data:
-        print(f"프로필이 없다: {path}\n`python3 suit.py bootstrap` 으로 캐릭터를 만든다")
+        print(f"프로필이 없다: {path}\n`{engine_run()} bootstrap` 으로 캐릭터를 만든다")
         return 3
     if a.action == "log":
         state = growth_state(th, class_growth(growth_path(a.profile), data, warn_stderr), key_tiers(promote_keys(warn_stderr)))
@@ -2932,8 +2999,8 @@ def widget_frame(th, cwd, width, depth, events=()):
     """캐릭터 창 한 장. 칸이 좁으면 그림 아래로 글을 내린다. events 는 최근 성장 줄들이다."""
     path, slot, _, _ = profile_source(None, start=cwd)
     data = read_slot(path)
-    if not data:
-        return ["이 폴더에는 docs-suit 슬롯이 없다.", "python3 suit.py bootstrap 으로 캐릭터를 만든다"]
+    if not data or not slot_class(data):
+        return ["이 폴더에는 docs-suit 캐릭터가 없다.", "python3 suit.py bootstrap 으로 캐릭터를 만든다"]
     if not growth_on(data):
         return ["캐릭터 키우기가 꺼져 있다.", "켜려면 python3 suit.py growth on"]
     held = promote_keys()
@@ -2972,7 +3039,8 @@ def pane_alive(mux, pane):
     if mux == "herdr":
         return subprocess.run(["herdr", "pane", "get", pane], capture_output=True).returncode == 0
     # tmux 는 없는 칸을 물어도 빈 줄과 0 을 돌려줄 때가 있어, 돌려받은 칸 번호까지 견준다
-    out = subprocess.run(["tmux", "display-message", "-p", "-t", pane, "#{pane_id}"], capture_output=True, text=True)
+    out = subprocess.run(["tmux", "display-message", "-p", "-t", pane, "#{pane_id}"], capture_output=True,
+                         encoding="utf-8", errors="replace")
     return out.returncode == 0 and out.stdout.strip() == pane
 
 
@@ -2985,11 +3053,11 @@ def split_pane(mux, anchor, cwd, cmd, width):
     """anchor 칸 오른쪽에 칸을 나눠 cmd 를 돌리고 새 칸 번호를 돌려준다. 포커스는 옮기지 않는다."""
     if mux == "tmux":
         out = subprocess.run(["tmux", "split-window", "-h", "-d", "-t", anchor, "-l", str(width), "-c", cwd,
-                              "-P", "-F", "#{pane_id}", cmd], capture_output=True, text=True, check=True)
+                              "-P", "-F", "#{pane_id}", cmd], capture_output=True, encoding="utf-8", errors="replace", check=True)
         return out.stdout.strip()
     # herdr 의 --ratio 는 원래 칸이 차지할 비율이다. 새 칸이 width 칸쯤 되게 맞춘다.
     ratio = 0.65
-    layout = subprocess.run(["herdr", "pane", "layout"], capture_output=True, text=True)
+    layout = subprocess.run(["herdr", "pane", "layout"], capture_output=True, encoding="utf-8", errors="replace")
     try:
         panes = json.loads(layout.stdout)["result"]["layout"]["panes"]
         total = next(p["rect"]["width"] for p in panes if p["pane_id"] == anchor)
@@ -2997,7 +3065,7 @@ def split_pane(mux, anchor, cwd, cmd, width):
     except (ValueError, KeyError, StopIteration):
         pass
     out = subprocess.run(["herdr", "pane", "split", anchor, "--direction", "right", "--ratio", f"{ratio:.2f}", "--cwd", cwd],
-                         capture_output=True, text=True, check=True)
+                         capture_output=True, encoding="utf-8", errors="replace", check=True)
     pane = json.loads(out.stdout)["result"]["pane"]["pane_id"]
     # exec 로 셸을 바꿔 끼워, 창이 끝나면 칸의 셸도 함께 끝나게 한다
     subprocess.run(["herdr", "pane", "run", pane, "exec " + cmd], capture_output=True, check=True)
@@ -3008,7 +3076,8 @@ def agent_pid(names=("codex", "claude")):
     """창을 띄운 에이전트 프로세스. 부모를 거슬러 올라가며 이름에 codex 나 claude 가 든 것을 찾는다. 없으면 None."""
     pid = os.getppid()
     for _ in range(8):
-        out = subprocess.run(["ps", "-o", "ppid=,comm=", "-p", str(pid)], capture_output=True, text=True).stdout.split(None, 1)
+        out = subprocess.run(["ps", "-o", "ppid=,comm=", "-p", str(pid)], capture_output=True, encoding="utf-8",
+                             errors="replace").stdout.split(None, 1)
         if len(out) < 2:
             return None
         if any(n in os.path.basename(out[1].strip()) for n in names):
@@ -3053,7 +3122,7 @@ def cmd_widget(a, th):
         if not mux:
             if not a.auto:
                 print("herdr 나 tmux 안에서 돌릴 때만 칸을 나눈다. 터미널 앱의 창 나누기로 옆 칸을 열고 "
-                      f"`python3 {HERE / 'suit.py'} widget` 을 돌려도 된다", file=sys.stderr)
+                      f"`{engine_run()} widget` 을 돌려도 된다", file=sys.stderr)
             return 0 if a.auto else 1
         if a.auto:
             # 상관없는 프로젝트에서 칸이 열리지 않게, 폴더 파일이 있고 캐릭터 키우기가 켜진 곳에서만 띄운다
@@ -3591,7 +3660,9 @@ def cmd_bundle(a, th):
 
 # ---------------------------------------------------------------- 자체 검사
 def selftest_usage(th, check, quiet):
-    """쓰는 사람이 부딪히는 흐름을 잰다. 바른 말을 ✗ 로 잡지 않는 문장 규칙."""
+    """쓰는 사람이 부딪히는 흐름을 잰다. 바른 말을 ✗ 로 잡지 않는 문장 규칙, 대화형 bootstrap 이 폴더 이름의 슬롯을 만들어
+    그 폴더에 잇는 것, 성장 기록을 남길 수 없어도 결과를 내는 check, utf-8 이 아닌 셸의 표준 입출력, 엔진 경로의 따옴표,
+    set 으로 먼저 만든 슬롯."""
     neutral = resolve(th)[0]
 
     def errors(doc):
@@ -3606,6 +3677,81 @@ def selftest_usage(th, check, quiet):
     check({"passive2", "spelling", "secret"} <= found, f"보여집니다, 배울께요, 덜 가린 비밀번호를 놓친다: {sorted(found)}")
     check("tells:count-soft" in {n for n, *_ in suggest_doc(th, "표본을 둘로 나눈다. 이 둘을 견준다.\n", neutral)},
           "단위 없이 센 수사를 제안으로 보이지 않는다")
+    check(shlex.split(engine_run()) == ["python3", str(HERE / "suit.py")], "엔진 명령의 경로를 셸이 한 낱말로 읽지 못한다")
+
+    class Tty(io.StringIO):
+        def isatty(self):
+            return True
+
+    with tempfile.TemporaryDirectory() as td:
+        saved = {k: os.environ.pop(k, None) for k in ("DOCS_SUIT_PROFILE", "DOCS_SUIT_HOME")}
+        os.environ["DOCS_SUIT_HOME"] = str(Path(td) / "conf")
+        cwd_was, stdin_was = os.getcwd(), sys.stdin
+        proj, other = Path(td).resolve() / "글 폴더", Path(td).resolve() / "other"
+        proj.mkdir()
+        other.mkdir()
+
+        def talk(folder, answers):
+            os.chdir(folder)
+            sys.stdin = Tty(answers)
+            return quiet(cmd_bootstrap, argparse.Namespace(questions=False, force=False, cls=None, yes=False, profile=None,
+                                                           docs=None, agents=None, hair=None, preset=None, here=False,
+                                                           **{k: None for k in PERSONA_IN_PROMPT}), th)
+
+        try:
+            # 클래스만 고르고 나머지는 Enter 로 넘기면 폴더 이름의 새 슬롯을 만들어 이 폴더에 잇는다
+            code = talk(proj, "1\n")
+            check(code == 0 and read_folder(proj / FOLDER_FILE).get("profile") == "글-폴더"
+                  and slot_class(read_slot(slot_path("글-폴더"))) == next(iter(th.classes))
+                  and profile_source(start=proj)[3] == "folder", "대화형 bootstrap 이 폴더 이름의 슬롯을 만들어 이 폴더에 잇지 않았다")
+            sys.stdin = io.StringIO("")
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                cmd_status(argparse.Namespace(cwd=str(proj), profile=None, size="line"), th)
+            check(out.getvalue().strip(), "대화형 bootstrap 으로 만든 캐릭터가 그 폴더의 상태 줄에 뜨지 않는다")
+            check(talk(proj, "1\n") == 1, "캐릭터가 있는 폴더에서 대화형 bootstrap 이 캐릭터를 또 만들었다")
+            # 다른 폴더에서는 있던 캐릭터를 이 폴더에서도 키울지 먼저 묻는다
+            check(talk(other, "1\n") == 0 and read_folder(other / FOLDER_FILE).get("profile") == "글-폴더"
+                  and not slot_path("other").exists(), "다른 폴더에서 있던 캐릭터를 고르면 그 캐릭터를 잇지 않는다")
+            # set 으로 먼저 만든 슬롯은 클래스가 없어 캐릭터가 아니다. bootstrap 이 --force 없이 덮고 남긴 축 값을 이어 받는다
+            quiet(cmd_set, argparse.Namespace(axis="register", value="haeyo", unset=False, audience=None, here=False,
+                                             profile="early"), th)
+            check(not growth_on(read_slot(slot_path("early"))), "set 으로 먼저 만든 슬롯을 캐릭터로 키운다")
+            ns = argparse.Namespace(questions=False, force=False, cls="office", yes=True, profile="early", docs=None, agents="",
+                                    hair=None, preset=None, here=False, **{k: None for k in PERSONA_IN_PROMPT})
+            early = read_slot(slot_path("early")) if quiet(cmd_bootstrap, ns, th) == 0 else {}
+            check(slot_class(early) == "office" and early.get("defaults") == {"register": "haeyo"},
+                  "bootstrap 이 set 으로 먼저 만든 슬롯을 덮지 못하거나 남긴 축 값을 잃었다")
+            # 성장 기록을 읽고 쓸 수 없어도 check 는 결과를 끝까지 내고 경고는 한 줄만 낸다
+            doc = Path(td) / "a.md"
+            doc.write_text("결과를 보고드립니다.\n", encoding="utf-8")
+            real = record_check, last_check
+
+            def denied(*args, **kw):
+                raise PermissionError("쓸 수 없는 폴더")
+
+            globals()["record_check"] = globals()["last_check"] = denied
+            try:
+                with contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()) as err:
+                    code = cmd_check(argparse.Namespace(file=str(doc), cls=None, kind=None, audience=None, set=None, chars=None,
+                                                        no_record=False, json=False, profile=None), th)
+            finally:
+                globals()["record_check"], globals()["last_check"] = real
+            check(code == 0 and out.getvalue().startswith("검사 ·") and err.getvalue().count("\n") == 1
+                  and "성장 기록" in err.getvalue(), f"성장 기록을 남길 수 없을 때 check 가 멈추거나 경고가 여러 줄이다: {err.getvalue()}")
+            # 로캘이 utf-8 이 아닌 셸에서도 한글 본문을 받고 결과를 낸다
+            env = {k: v for k, v in os.environ.items() if k not in ("DOCS_SUIT_PROFILE", "DOCS_SUIT_LOG")}
+            env["PYTHONIOENCODING"] = "ascii"
+            r = subprocess.run([sys.executable, str(HERE / "suit.py"), "check", "-", "--no-record"], cwd=td, env=env,
+                               input="결과를 보고드립니다.\n".encode("utf-8"), capture_output=True, timeout=60)
+            check(r.returncode == 0 and "검사 ·" in r.stdout.decode("utf-8", "replace"),
+                  f"표준 입출력이 utf-8 이 아닌 셸에서 check 가 깨진다: {r.stderr.decode('utf-8', 'replace')[-200:]}")
+        finally:
+            os.chdir(cwd_was)
+            sys.stdin = stdin_was
+            for k, v in saved.items():
+                os.environ.pop(k, None)
+                if v is not None:
+                    os.environ[k] = v
 
 
 def selftest(th):
@@ -3617,7 +3763,7 @@ def selftest(th):
 
     def quiet(fn, *args):
         old = sys.stdout, sys.stderr
-        sys.stdout = sys.stderr = open(os.devnull, "w")
+        sys.stdout = sys.stderr = open(os.devnull, "w", encoding="utf-8")
         try:
             return fn(*args)
         finally:
@@ -4475,6 +4621,12 @@ def selftest(th):
 
 
 def main(argv=None):
+    # 본문과 안내가 한글이라 표준 입출력을 utf-8 로 맞춘다. 로캘이 C 이거나 cp949 인 셸에서 에이전트가 불러도 깨지지 않게 한다
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors=stream.errors)
+        except (AttributeError, ValueError, OSError):
+            pass  # 바꿔 끼운 스트림은 그대로 둔다
     log = os.environ.get("DOCS_SUIT_LOG")  # 동작 테스트가 에이전트의 호출 인자를 모은다. tests/agent/run.py
     if log:
         try:
