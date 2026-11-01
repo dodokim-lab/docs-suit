@@ -3590,6 +3590,24 @@ def cmd_bundle(a, th):
 
 
 # ---------------------------------------------------------------- 자체 검사
+def selftest_usage(th, check, quiet):
+    """쓰는 사람이 부딪히는 흐름을 잰다. 바른 말을 ✗ 로 잡지 않는 문장 규칙."""
+    neutral = resolve(th)[0]
+
+    def errors(doc):
+        return {n for n, _, _ in tells_found(th, doc, neutral) if th.tells[n]["layer"] == "error"}
+
+    clean = ("자료는 10일께 들어오고 결과는 내일께 나온다. 서울께 지날 때 연락한다. 지난 겨울께 시작했다.\n"
+             "표본을 둘로 나눈다. 이 둘을 견준다.\n"
+             "password: ****\npassword=$DB_PASS\npassword: ${DB_PASS}\npassword: <비밀번호>\npassword: {{ secret }}\n"
+             "비밀번호: 사내 규정대로 바꾼다\n")
+    check(not errors(clean), f"바른 말이나 가린 비밀값을 문장 규칙의 ✗ 로 잡는다: {sorted(errors(clean))}")
+    found = errors("결과가 보여집니다. 다시 배울께요. 그림을 보일께요.\npassword: ****abc\n")
+    check({"passive2", "spelling", "secret"} <= found, f"보여집니다, 배울께요, 덜 가린 비밀번호를 놓친다: {sorted(found)}")
+    check("tells:count-soft" in {n for n, *_ in suggest_doc(th, "표본을 둘로 나눈다. 이 둘을 견준다.\n", neutral)},
+          "단위 없이 센 수사를 제안으로 보이지 않는다")
+
+
 def selftest(th):
     problems = []
 
@@ -4249,6 +4267,8 @@ def selftest(th):
                 os.environ.pop(k, None)
                 if v is not None:
                     os.environ[k] = v
+
+    selftest_usage(th, check, quiet)
 
     # 승급 키. 시험용 작은 키로 서명한다. 이 키는 selftest 안에서만 PROMOTE_KEYS 에 잠깐 넣는다.
     tp = int("a5cacdc975e6a50165ab7aa7524623ee067919475ac06831b64a4dcfff2f88716519", 16)
