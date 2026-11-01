@@ -113,7 +113,7 @@ docs-suit 는 쓰기 전에 문서 종류와 읽는 사람, 말투에 맞춰 규
 
 ## 빌려 온 것
 
-규칙과 본문 검사는 아래 자료에서 아이디어를 빌려 새로 썼고, 문구와 정규식은 옮기지 않았습니다. 파일째 넣은 것은 CSS 두 개와 글꼴 하나뿐이고, 출처와 해시는 [themes/ko/PROVENANCE.md](themes/ko/PROVENANCE.md) 에 있습니다.
+규칙과 본문 검사는 아래 자료에서 아이디어를 빌려 새로 썼고, 문구와 정규식은 옮기지 않았습니다. 파일째 넣은 것은 CSS 두 개와 글꼴 하나, 그림 경로만 옮긴 것은 로고 세 개뿐입니다. 출처와 해시는 [themes/ko/PROVENANCE.md](themes/ko/PROVENANCE.md) 에, 라이선스 원문은 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 에 있습니다.
 
 | 자료 | 빌린 것 |
 |---|---|
@@ -126,6 +126,7 @@ docs-suit 는 쓰기 전에 문서 종류와 읽는 사람, 말투에 맞춰 규
 | [humanizer](https://github.com/blader/humanizer) | 패턴 분류와, 검출기를 피하려는 게 아니라 사람 독자를 위해 고친다는 목표 |
 | [new.css](https://github.com/xz/new.css), [sakura](https://github.com/oxalorg/sakura) | HTML 로 낼 때 입히는 CSS. 파일째 넣었고 각자의 MIT 라이선스를 따름 |
 | [Neo둥근모](https://github.com/neodgm/neodgm) | 웹 판 써 보기의 제목 띠와 이름표 글꼴. 파일째 넣었고 SIL OFL 1.1 을 따름 |
+| [simple-icons](https://github.com/simple-icons/simple-icons) | 웹 판 써 보기의 ChatGPT, Claude, Gemini 단추 로고. 그림 경로만 옮겼고 CC0 1.0 을 따르며, 로고의 상표권은 각 회사에 있음 |
 | [Agent Skills](https://agentskills.io) | 에이전트에 스킬로 까는 공용 규격 |
 | 90년대 국산 2D 온라인 게임 | 1차부터 4차까지 전직하는 구조와 도트 그림, 웹 판 화면의 느낌. 그림과 칭호, 맵은 새로 그림 |
 
@@ -141,7 +142,9 @@ docs-suit 는 쓰기 전에 문서 종류와 읽는 사람, 말투에 맞춰 규
 
 ## 빠른 시작
 
-조립한 지침은 마크다운 한 장입니다. Claude Code, Codex, Cursor 같은 에이전트에는 스킬로 깔고, 웹 채팅에는 붙여 넣어 씁니다. 파이썬 3.9 이상만 있으면 됩니다.
+조립한 지침은 마크다운 한 장입니다. Claude Code 와 Codex, Antigravity CLI 같은 에이전트에는 스킬로 깔고, 웹 채팅에는 붙여 넣어 씁니다. Cursor 와 Grok Build 에도 깔 수 있지만, 스킬이 불리는지는 아직 확인하지 않았습니다.
+
+파이썬 3.9 이상만 있으면 되고, macOS 와 Linux 에서 확인했습니다. Windows 에서는 아직 확인하지 않아서 위의 웹 판으로 써 주세요. PDF 를 재려면 pdftotext 가 더 있어야 합니다.
 
 ```sh
 git clone https://github.com/dodokim-lab/docs-suit.git ~/docs-suit
@@ -153,12 +156,18 @@ python3 ~/docs-suit/suit.py bootstrap
 
 스킬은 깐 폴더에서만 불려서 다른 프로젝트의 글에는 끼어들지 않습니다. 다른 폴더에서도 쓰려면 그 폴더에서 `python3 ~/docs-suit/suit.py export --agent claude` 처럼 한 번 더 깝니다. 깐 스킬은 받은 폴더의 `suit.py` 를 부르니, 받은 폴더는 옮기거나 지우지 마세요.
 
+새 판은 `git -C ~/docs-suit pull` 로 받고, 스킬을 깐 폴더마다 `export` 를 다시 돌려야 스킬까지 새 판이 됩니다.
+
 ## 쓰는 법
 
-클래스 고르기와 지침 조립, 검사, 문체 배우기, 캐릭터 키우기는 [GUIDE.md](GUIDE.md) 에 있습니다.
+클래스 고르기와 지침 조립, 검사, 문체 배우기, 캐릭터 키우기는 [GUIDE.md](GUIDE.md) 에 있습니다. 새 판으로 올리는 법과 지우는 법도 같은 문서에 있습니다.
+
+## 기여와 보안 신고
+
+새 문서 종류나 테마 조합을 더하는 PR 을 받고, 머지되면 캐릭터의 3차와 4차 전직을 여는 승급 키를 드립니다. 받는 자리와 자동 판정, 승급 키는 [CONTRIBUTING.md](CONTRIBUTING.md) 에 있습니다. 보안 취약점은 공개 이슈 대신 [SECURITY.md](SECURITY.md) 의 비공개 신고로 보내 주세요.
 
 ## 만든 사람
 
 김도도가 만들고 있습니다. AI 와 일하며 만든 것과 배운 것은 [Threads](https://www.threads.com/@dodokim_lab) 와 [velog](https://velog.io/@dodokim_lab) 에 씁니다.
 
-MIT 라이선스입니다.
+MIT 라이선스입니다. 함께 넣은 CSS 와 글꼴, 로고는 각자의 라이선스를 따르고, 원문은 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 에 있습니다.

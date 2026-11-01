@@ -2,11 +2,11 @@
 
 docs-suit 를 설치하고 쓰는 법을 기능마다 적은 문서입니다. 절마다 기능 하나를 다루니, 필요한 절만 골라 읽으면 됩니다.
 
-지침은 마크다운 한 장이라 어떤 AI 에도 붙습니다. Claude Code, Codex, Antigravity CLI, Grok Build, Cursor 에는 공용 규격인 Agent Skills 로 설치합니다. ChatGPT 와 Claude, Gemini, Grok 웹 채팅에는 `export --agent web` 이 만든 지침을 붙여 넣어 씁니다. 이름은 문서에 입히는 옷이라는 뜻의 suit 이고, 도구 모음을 뜻하는 suite 와는 다릅니다.
+지침은 마크다운 한 장이라 어떤 AI 에도 붙습니다. Claude Code 와 Codex, Antigravity CLI 에는 공용 규격인 Agent Skills 로 설치합니다. Cursor 와 Grok Build 에도 같은 규격으로 깔 수 있지만, 스킬이 불리는지는 아직 확인하지 않았습니다. ChatGPT 와 Claude, Gemini, Grok 웹 채팅에는 `export --agent web` 이 만든 지침을 붙여 넣어 씁니다. 이름은 문서에 입히는 옷이라는 뜻의 suit 이고, 도구 모음을 뜻하는 suite 와는 다릅니다.
 
 ## 빠른 시작
 
-파이썬 3.9 이상만 있으면 되고, 따로 설치할 패키지는 없습니다.
+파이썬 3.9 이상만 있으면 되고, 따로 설치할 패키지는 없습니다. macOS 와 Linux 에서 확인했고, Windows 에서는 아직 확인하지 않아서 설치 없이 쓰는 웹 판을 씁니다. PDF 를 재려면 pdftotext 가 더 있어야 하고, 까는 법은 "다 쓴 글을 재고 검토받기" 절에 있습니다.
 
 1. 저장소를 받아 두고, 글을 쓰는 폴더에서 bootstrap 을 돌립니다.
    ```sh
@@ -123,7 +123,7 @@ python3 suit.py export --agent web                       # 웹 채팅에 붙일 
 
 같은 문서를 고쳐서 다시 재면 지난 검사와 견준 줄이 붙습니다. "✗ 3 → 0, △ 5 → 2" 처럼 줄어든 개수를 보여 주고, 성장 기록에는 본문 대신 개수만 남깁니다. 파일은 같은 경로의 지난 검사와 견줍니다. 표준 입력으로 넘긴 본문은 경로가 없어서, 한 시간 안에 같은 종류를 잰 바로 앞 검사와 견주고 그렇게 견줬다고 밝힙니다.
 
-읽는 문서 파일 형식은 docx, pptx, hwpx, odt, odp, html, pdf 입니다. 제목과 목록, 표, 굵은 글씨를 마크다운과 같은 꼴로 읽어 같은 기준을 적용하고, 마크다운 기호를 따지는 출력 형식 검사만 건너뜁니다. PDF 는 문단 구조가 남지 않아 어림이 거칠어지니 원본 문서가 있으면 그쪽을 넘깁니다. 옛 형식인 doc, ppt, hwp 는 읽지 못해서 새 형식으로 저장해 넘겨야 합니다.
+읽는 문서 파일 형식은 docx, pptx, hwpx, odt, odp, html, pdf 입니다. 제목과 목록, 표, 굵은 글씨를 마크다운과 같은 꼴로 읽어 같은 기준을 적용하고, 마크다운 기호를 따지는 출력 형식 검사만 건너뜁니다. PDF 는 문단 구조가 남지 않아 어림이 거칠어지니 원본 문서가 있으면 그쪽을 넘깁니다. PDF 의 글은 poppler 의 `pdftotext` 로 뽑아서, 이 명령이 없으면 PDF 를 읽지 못합니다. macOS 는 `brew install poppler`, Debian 과 Ubuntu 는 `sudo apt install poppler-utils` 로 깝니다. 옛 형식인 doc, ppt, hwp 는 읽지 못해서 새 형식으로 저장해 넘겨야 합니다.
 
 이 검사는 AI 가 썼는지 가리는 판정기와 다르고, 공통 바닥의 문장 규칙을 재는 자입니다. 단어만 고친 글은 여전히 AI 가 쓴 티가 난다는 실험 결과가 있어서, 공통 바닥에는 일반론 대신 받은 자료의 사례와 수치로 쓰라는 규칙도 함께 둡니다.
 
@@ -300,12 +300,14 @@ PR 을 올리면 자동 판정이 먼저 봅니다. 판정은 main 의 코드로
 | 판정 | 뜻 | 처리 |
 |---|---|---|
 | 검토 대기 | 검사를 모두 통과했습니다 | 관리자에게 리뷰를 요청합니다 |
-| 고칠 곳이 있음 | selftest 나 parity, 문체 검사가 틀렸거나 PR 설명이 비었습니다 | 닫지 않습니다. 고쳐서 push 하면 다시 판정합니다 |
-| 닫음 | 기존 내용을 지웠거나 기여를 받는 자리 밖의 파일이 있거나, 저장소를 해칠 수 있는 변경입니다 | 바로 닫습니다 |
+| 고칠 곳이 있음 | selftest 나 parity, 문체 검사가 틀렸거나, 받는 자리 밖의 파일과 규칙에 맞지 않는 이름, 링크, 지침을 뒤집는 듯한 낱말처럼 닫을 만큼 명백하지 않은 문제가 있습니다. PR 설명이 비었거나 설명에 그런 낱말이 걸려도 여기 듭니다 | 닫지 않고 차단 횟수에도 넣지 않습니다. 고쳐서 push 하면 다시 판정합니다 |
+| 닫음 | 숨은 문자가 있거나, 심볼릭 링크와 gitlink 같은 특수 파일이 있거나, 보호한 자리의 코드를 고쳤습니다 | 바로 닫고 차단 횟수에 넣습니다 |
 
-기여를 받는 자리는 새 문서 종류와 새 값, 테마 조합, 써 보기 템플릿, 도트 부품, 문장 규칙, 문서 오탈자입니다. `defaults.yaml` 과 `axes.yaml`, `look.yaml`, `tells.yaml` 은 여러 기여가 함께 쓰는 파일이라 줄을 더하기만 하고, 기존 항목을 고칠 일이 있으면 이슈로 먼저 의논합니다. 엔진과 웹 코드를 고친 PR 은 자동 검사로 옳고 그름을 가리지 못해서 관리자가 직접 봅니다. 90일 안에 자동으로 닫힌 PR 이 세 건이 되면 그 계정을 차단합니다.
+닫는 경우는 이 세 가지뿐입니다. 보호한 자리는 워크플로가 든 `.github/` 와 판정 도구가 든 `tools/`, 엔진에서 승급 키를 확인하는 코드입니다. 낱말과 링크 검사는 정상 글도 걸 수 있어서 닫지 않고 고칠 곳으로만 알립니다. 판정이 잘못 걸었거나 잘못 닫았다고 보면 PR 번호를 적어 이슈를 열어 주세요. 90일 안에 자동으로 닫힌 PR 이 세 건이 되면 그 계정을 차단합니다.
 
-PR 이 머지되면 관리자가 PR 댓글로 승급 키를 드립니다. `python3 suit.py promote <키>` 로 넣으면 레벨이 찬 만큼 전직하고, 카드에 기여한 GitHub 아이디가 붙습니다. 키는 GitHub 아이디와 차수, 기여 링크에 관리자의 서명을 붙인 문자열이고, 엔진은 저장소에 든 공개 키로 서명을 확인합니다. 엔진과 기록이 모두 내 컴퓨터에 있으니 코드를 고치면 얼마든지 올릴 수 있지만, 그러면 혼자 하는 게임의 재미만 줄어듭니다.
+기여를 받는 자리는 새 문서 종류와 새 값, 테마 조합, 써 보기 템플릿, 도트 부품, 문장 규칙, 문서 오탈자입니다. `defaults.yaml` 과 `axes.yaml`, `look.yaml`, `tells.yaml` 은 여러 기여가 함께 쓰는 파일이라 줄을 더하기만 하고, 기존 항목을 고칠 일이 있으면 이슈로 먼저 의논합니다. 엔진과 웹 코드를 고친 PR 은 자동 검사로 옳고 그름을 가리지 못해서 관리자가 직접 봅니다. 자리마다 고칠 파일과 함께 할 일은 `CONTRIBUTING.md` 에 있습니다.
+
+PR 이 머지되면 관리자가 승급 키를 손으로 만들어 PR 댓글로 드리므로, 받기까지 며칠 걸릴 수 있습니다. `python3 suit.py promote <키>` 로 넣으면 레벨이 찬 만큼 전직하고, 카드에 기여한 GitHub 아이디가 붙습니다. 키는 GitHub 아이디와 차수, 기여 링크에 관리자의 서명을 붙인 문자열이고, 엔진은 저장소에 든 공개 키로 서명을 확인합니다. 엔진과 기록이 모두 내 컴퓨터에 있으니 코드를 고치면 얼마든지 올릴 수 있지만, 그러면 혼자 하는 게임의 재미만 줄어듭니다.
 
 ## 대시보드에서 고르고 바로 적용하기
 
@@ -370,9 +372,9 @@ https://dodokim-lab.github.io/docs-suit/ 에서는 설치 없이 써 보기 화�
 
 깐 폴더가 git 저장소 안이면 스킬 폴더를 `.git/info/exclude` 에 적어 커밋되지 않게 합니다. 스킬에는 이 컴퓨터의 엔진 경로가 들어 있어서, 팀 저장소에 올라가면 다른 사람에게도 번지기 때문입니다. exclude 파일은 저장소에 올라가지 않습니다.
 
-스킬은 이 저장소의 `suit.py` 를 절대 경로로 불러서 `git pull` 하면 스킬을 깐 모든 폴더에 바로 반영됩니다. 저장소를 옮겼다면 스킬을 깐 폴더마다 `export` 를 다시 돌립니다.
+스킬은 이 저장소의 `suit.py` 를 절대 경로로 부르고, 문서 종류와 축 목록 같은 안내는 깔 때의 판으로 SKILL.md 에 적힙니다. 그래서 새 판을 받았거나 저장소를 옮겼으면 스킬을 깐 폴더마다 `export` 를 다시 돌립니다. 순서는 "새 판으로 올리려면" 절에 있습니다.
 
-Claude Code, Antigravity CLI, Codex CLI 는 실제 요청을 넣어 작업 폴더의 스킬이 불리는 것을 확인했고, 결과는 `tests/agent/results/` 에 있습니다. Codex 는 ChatGPT 무료 요금제로도 됩니다. Cursor 의 자리는 2차 자료 기준이라 Cursor 문서로 확인해야 합니다.
+Claude Code, Antigravity CLI, Codex CLI 는 실제 요청을 넣어 작업 폴더의 스킬이 불리는 것을 확인했고, 결과는 `tests/agent/results/` 에 있습니다. Codex 는 ChatGPT 무료 요금제로도 됩니다. Cursor 와 Grok Build 는 아직 확인하지 않았고, Cursor 의 자리는 2차 자료 기준이라 Cursor 문서로 확인해야 합니다.
 
 ```sh
 cd <글을 쓰는 폴더>
@@ -385,13 +387,44 @@ python3 <docs-suit 경로>/suit.py export --agent web            # 웹 채팅용
 
 Claude Code 에서 스킬 대신 output style 로 쓰려면 `compose --format output-style -o ~/.claude/output-styles/<이름>.md` 로 뽑습니다.
 
+## 새 판으로 올리려면
+
+`git pull` 로 받으면 엔진과 규칙 문서는 바로 새 판이 되지만, 폴더에 깐 SKILL.md 와 웹 채팅용 지침에는 만들 때의 판이 남습니다. 그래서 받은 뒤에 스킬을 깐 폴더마다 `export` 를 다시 돌리고, 웹 채팅에 붙여 쓰는 지침도 다시 뽑아 붙여 넣습니다.
+
+```sh
+git -C <docs-suit 경로> pull
+cd <스킬을 깐 폴더>
+python3 <docs-suit 경로>/suit.py export --agent claude,codex   # 처음에 깐 도구를 그대로 적는다
+python3 <docs-suit 경로>/suit.py export --agent web            # 웹 채팅용 지침을 다시 뽑는다
+```
+
+프로필과 성장 기록, 받은 승급 키는 저장소 밖 `~/.config/docs-suit/` 에 있어서 새 판을 받아도 그대로 남습니다. 상태 줄과 Codex 훅은 엔진을 직접 부르므로 다시 걸지 않아도 됩니다.
+
+## 지우려면
+
+스킬을 거두는 명령이 받은 저장소의 `suit.py` 를 쓰므로, 아래 순서대로 지우고 저장소 폴더는 맨 마지막에 지웁니다.
+
+1. 스킬을 깐 폴더마다 `export --remove` 로 거둡니다. docs-suit 가 만든 SKILL.md 만 지우고, 비게 된 스킬 폴더와 `.git/info/exclude` 에 적은 줄도 함께 치웁니다.
+   ```sh
+   cd <스킬을 깐 폴더>
+   python3 <docs-suit 경로>/suit.py export --remove
+   ```
+2. 예전 판이 홈 폴더에 깐 스킬이 남아 있으면 `python3 <docs-suit 경로>/suit.py export --remove --global` 로 거둡니다.
+3. 폴더에 슬롯을 이을 때 생긴 폴더 파일 `.docs-suit.yaml` 은 폴더마다 손으로 지웁니다. 팀 저장소에 올린 파일이면 함께 쓰는 사람과 먼저 의논합니다.
+4. 상태 줄이나 Codex 훅을 걸었으면 `~/.claude/settings.json` 과 `~/.codex/hooks.json` 에서 docs-suit 를 부르는 줄을 뺍니다. 그대로 두면 지운 엔진을 부르다 실패합니다. output style 로 뽑아 둔 파일이 있으면 그 파일도 지웁니다.
+5. 설정 폴더와 받은 저장소를 지웁니다. 설정 폴더에는 프로필 슬롯과 성장 기록, 내 문체, 받은 승급 키, 웹 채팅용 지침이 모두 들어 있어서 지우면 되살릴 수 없습니다. `DOCS_SUIT_HOME` 으로 설정 폴더를 옮겼다면 그 폴더를 지웁니다.
+   ```sh
+   rm -rf ~/.config/docs-suit
+   rm -rf <docs-suit 경로>
+   ```
+
 ## 내 옷을 만들어 입기
 
 이 저장소를 fork 해서 `themes/ko/` 아래 문서를 고치면 그대로 내 테마가 됩니다.
 - 값을 새로 만들 때는 `themes/ko/<축>/<값>.md` 를 만들고 `axes.yaml` 에 한 줄 더합니다. 문서 끝 `## 보기` 절에 공통 예문을 그 값으로 써 두면 테마 설정 탭이 카드로 보여 줍니다. 보기 절은 AI 에게 주는 지침에는 실리지 않습니다.
 - 클래스는 `themes/ko/classes/<id>.yaml`, 문서 종류는 `defaults.yaml` 과 `kinds/<종류>.md` 입니다.
 - 본문 검사 패턴은 `tells.yaml`, 틀이 꼭 쓰라고 한 절은 `defaults.yaml` 의 `must` 입니다. 패턴을 더하면 selftest 가 모든 값의 보기에서 오류 패턴이 걸리지 않는지 잽니다.
-- 고친 뒤 `python3 suit.py bundle` 로 웹 묶음을 다시 만들고, `python3 suit.py selftest` 와 `node tests/parity.js` 로 확인합니다. parity 는 웹과 엔진이 704가지 조합에서 같은 지침과 검토 지침을 내는지 글자 하나까지 견줍니다. GitHub Actions 도 같은 검사를 돌립니다.
+- 고친 뒤 `python3 suit.py bundle` 로 웹 묶음을 다시 만들고, `python3 suit.py selftest` 와 `node tests/parity.js` 로 확인합니다. parity 는 모든 클래스와 문서 종류의 짝을 프로필과 옵션 몇 가지로 조립해, 웹과 엔진이 같은 지침과 검토 지침을 내는지 글자 하나까지 견줍니다. 캐릭터 그림과 슬롯 파일도 함께 견주고, 끝에 견준 건수를 알려 줍니다. GitHub Actions 도 같은 검사를 돌립니다.
 
 ## 함께 쓰면 좋은 것
 
@@ -406,4 +439,4 @@ docs-suit 는 한국어 어법과 클래스, 문서 종류, 독자를 축으로 
 
 ## 라이선스
 
-MIT 입니다. `themes/ko/visual-doc/` 의 CSS 두 개는 각자의 MIT 라이선스를, `docs/fonts/` 의 글꼴은 SIL OFL 1.1 을 따르고, 출처와 해시는 `themes/ko/PROVENANCE.md` 에 있습니다. 앞으로 할 일은 `ROADMAP.md` 에 있습니다.
+MIT 입니다. `themes/ko/visual-doc/` 의 CSS 두 개는 각자의 MIT 라이선스를, `docs/fonts/` 의 글꼴은 SIL OFL 1.1 을, 웹 판 써 보기의 로고 그림은 CC0 1.0 을 따릅니다. 라이선스 원문은 `THIRD_PARTY_NOTICES.md` 에, 출처와 해시는 `themes/ko/PROVENANCE.md` 에 있습니다. 앞으로 할 일은 `ROADMAP.md` 에 있습니다.

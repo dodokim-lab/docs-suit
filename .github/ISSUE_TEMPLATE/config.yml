@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 보안 취약점 신고
+    url: https://github.com/dodokim-lab/docs-suit/blob/main/SECURITY.md
+    about: 취약점은 공개 이슈 대신 비공개로 신고해 주세요. 신고하는 법은 SECURITY.md 에 있습니다.

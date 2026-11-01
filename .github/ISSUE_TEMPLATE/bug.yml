@@ -1,0 +1,59 @@
+name: 버그 신고
+description: 명령이 실패하거나, 결과가 GUIDE.md 의 설명과 다를 때
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        보안 취약점은 이 양식 대신 SECURITY.md 의 비공개 신고로 보내 주세요.
+        출력에 프로필 내용이나 문서 본문, 이름이 든 경로가 있으면 지우고 붙여 넣습니다.
+  - type: input
+    id: os
+    attributes:
+      label: OS 와 판
+      placeholder: 예) macOS 15.1, Ubuntu 24.04
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: 파이썬 판
+      description: "`python3 --version` 의 출력입니다."
+      placeholder: 예) Python 3.12.4
+    validations:
+      required: true
+  - type: input
+    id: agent
+    attributes:
+      label: 에이전트와 판
+      description: 터미널에서 suit.py 를 직접 돌렸거나 웹 판에서 생긴 일이면 그렇게 적습니다.
+      placeholder: 예) Claude Code 2.1.3, Codex CLI 0.165.0, 웹 판
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: docs-suit 커밋
+      description: "`git -C <docs-suit 경로> rev-parse --short HEAD` 의 출력입니다."
+      placeholder: 예) 2000e9b
+  - type: textarea
+    id: command
+    attributes:
+      label: 실행한 명령
+      description: 에이전트에게 부탁한 일이면 보낸 요청 문장을 적습니다.
+      render: sh
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: 출력
+      description: 오류 메시지까지 그대로 붙여 넣습니다.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 기대한 결과
+      description: 어떻게 될 줄 알았는지 적습니다.

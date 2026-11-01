@@ -3,7 +3,7 @@
 # 순서는 아래 키 순서이고, 값은 {label: 질문 이름, ask: 묻는 말, hint: 예시} 한 줄 묶음이다.
 
 questions:
-  call: {label: 호칭, ask: AI 가 나를 뭐라고 부르면 좋을까요?, hint: 예) 민수 님}
+  call: {label: 호칭, ask: AI 가 나를 뭐라고 부르면 좋을까요?, hint: 예) 김대리님}
   affiliation: {label: 소속, ask: 지금 어디서 무엇을 하나요?, hint: 예) 공간정보공학과 3학년 / 백엔드 개발 2년 차}
   goal: {label: 목표, ask: 요즘 글쓰기로 이루고 싶은 목표는?, hint: 예) 하반기 백엔드 공채 서류 통과}
   docs: {label: 자주 쓰는 문서, ask: 자주 쓰는 문서를 골라 주세요. 번호를 쉼표로 이어 씁니다, hint: "예) 1,3"}
