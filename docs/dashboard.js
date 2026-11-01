@@ -12,7 +12,7 @@
   function src(tab) { return PAGES[tab] + (slot ? `?slot=${encodeURIComponent(slot)}` : ""); }
 
   function show(tab) {
-    if (!(tab in PAGES)) return;
+    if (!Object.hasOwn(PAGES, tab)) return;  // 주소의 #constructor 같은 이름을 탭으로 받지 않는다
     current = tab;
     for (const [t, f] of Object.entries(frames)) {
       f.hidden = t !== tab;
@@ -38,7 +38,7 @@
   // 처음 열 탭. 주소의 탭, 이 폴더에 이은 캐릭터가 있으면 캐릭터, 없으면 캐릭터 설정 순이다. 엔진의 serve_page 와 같다
   function firstTab(st) {
     const hash = location.hash.slice(1);
-    if (hash in PAGES) return hash;
+    if (Object.hasOwn(PAGES, hash)) return hash;
     if (st && st.exists && ["env", "arg", "folder"].indexOf(st.why) >= 0) return "character";
     return "setup";
   }
