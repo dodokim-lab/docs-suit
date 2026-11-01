@@ -275,15 +275,16 @@ def clean_text(s):
 
 
 # ---------------------------------------------------------------- 테마 모음
-# 글에 섞이면 보이지 않는 채로 AI 에게 넘어가는 문자. 형식 문자(Cf), 사용자 정의 문자(Co), 정해지지 않은 자리(Cn)와
-# 변이 선택자, 한글 채움 문자다. 변이 선택자를 겹쳐 붙이면 글을 숨겨 나를 수 있어서, 이모지 바로 뒤의 FE0F 하나만 남긴다.
+# 글에 섞이면 보이지 않는 채로 AI 에게 넘어가는 문자. 형식 문자(Cf), 사용자 정의 문자(Co)와 변이 선택자, 한글 채움 문자다.
+# 변이 선택자를 겹쳐 붙이면 글을 숨겨 나를 수 있어서, 이모지 바로 뒤의 FE0F 하나만 남긴다. 정해지지 않은 자리(Cn)는
+# 파이썬 판마다 유니코드 판이 달라 새 이모지가 Cn 으로 잡히고 묶음 결과가 판마다 달라지므로 걷지 않는다. 외부 PR 의 Cn 은 판정이 막는다.
 HIDDEN_FILL = {0x115F, 0x1160, 0x3164, 0xFFA0}
 VS16 = chr(0xFE0F)
 
 
 def _hidden(ch):
     o = ord(ch)
-    return (unicodedata.category(ch) in ("Cf", "Co", "Cn") or 0xFE00 <= o <= 0xFE0F or 0xE0100 <= o <= 0xE01EF
+    return (unicodedata.category(ch) in ("Cf", "Co") or 0xFE00 <= o <= 0xFE0F or 0xE0100 <= o <= 0xE01EF
             or o in HIDDEN_FILL)
 
 
