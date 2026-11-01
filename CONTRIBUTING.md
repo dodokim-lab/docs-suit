@@ -40,13 +40,13 @@ node tests/parity.js        # 웹과 엔진이 같은 지침을 내는지
 | 판정 | 이럴 때 | 처리 |
 |---|---|---|
 | 검토 대기 | 검사를 모두 통과했습니다 | 관리자에게 리뷰를 요청합니다 |
-| 고칠 곳이 있음 | 검사가 틀렸거나, 받는 자리 밖의 파일과 규칙에 맞지 않는 이름, 링크, 지침을 뒤집는 듯한 낱말처럼 닫을 만큼 명백하지 않은 문제가 있습니다. PR 설명이 비었거나 설명에 그런 낱말이 걸려도 여기 듭니다 | 닫지 않고 차단 횟수에도 넣지 않습니다. 고쳐서 push 하면 다시 판정합니다 |
+| 고칠 곳이 있음 | 검사가 틀렸거나, 받는 자리 밖의 파일과 규칙에 맞지 않는 이름, 링크, 지침을 뒤집는 듯한 낱말처럼 닫을 만큼 명백하지 않은 문제가 있습니다. 파일을 지우거나 옮긴 것, 바이너리 파일, 너무 큰 파일, PR 설명이 비었거나 설명에 그런 낱말이 걸린 것도 여기 듭니다 | 닫지 않고 차단 횟수에도 넣지 않습니다. 고쳐서 push 하면 다시 판정합니다 |
 | 닫음 | 아래 세 가지 가운데 하나입니다 | 바로 닫고 차단 횟수에 넣습니다 |
 
 자동으로 닫는 경우는 세 가지뿐입니다.
-- 눈에 보이지 않는 숨은 문자가 들어 있습니다. 읽는 사람과 AI 가 다른 글을 보게 만들 수 있어서입니다.
+- 눈에 보이지 않는 숨은 문자가 들어 있습니다. 읽는 사람과 AI 가 다른 글을 보게 만들 수 있어서입니다. 메모장 같은 편집기가 파일 맨 앞에 붙이는 BOM 한 개는 고칠 곳으로만 알립니다.
 - 심볼릭 링크나 gitlink 처럼 일반 파일이 아닌 특수 파일이 있습니다.
-- 보호한 자리의 코드를 고쳤습니다. 워크플로가 든 `.github/` 와 판정 도구가 든 `tools/`, 엔진에서 승급 키를 확인하는 코드입니다.
+- 보호한 자리의 코드를 고쳤습니다. 워크플로가 든 `.github/workflows/` 와 `.github/actions/`, 관리 도구가 든 `tools/`, `.gitattributes` 와 `.gitmodules`, 엔진에서 승급 키를 확인하는 코드, 동작 테스트 케이스 파일 `tests/agent/cases.py` 에 넣은 코드입니다. 이슈 양식처럼 `.github/` 아래의 다른 파일은 고칠 곳으로만 알립니다.
 
 낱말과 링크 검사는 정상 글도 걸 수 있어서 닫지 않고 고칠 곳으로만 알립니다. 판정이 잘못 걸었거나 잘못 닫았다고 보면 PR 번호를 적어 이슈를 열어 주세요.
 
@@ -68,6 +68,6 @@ node tests/parity.js        # 웹과 엔진이 같은 지침을 내는지
 
 docs-suit accepts pull requests that add document kinds, theme presets, values, writing rules, try-it templates and pixel-art parts under `themes/ko/`. Run `python3 suit.py bundle`, `python3 suit.py selftest` and `node tests/parity.js` before opening a pull request.
 
-An automated check reviews every pull request and comments in Korean and English. It closes a pull request only for hidden characters, special files such as symlinks or gitlinks, or changes to protected code (`.github/`, `tools/`, and the promotion-key check in the engine). Everything else that needs work is left open with a comment and is not counted. Accounts with three automatically closed pull requests within 90 days are blocked.
+An automated check reviews every pull request and comments in Korean and English. It closes a pull request only for hidden characters, special files such as symlinks or gitlinks, or changes to protected code: `.github/workflows/`, `.github/actions/`, `tools/`, `.gitattributes`, `.gitmodules`, the promotion-key check in the engine, and code in `tests/agent/cases.py`. A single byte order mark at the start of a file is not treated as a hidden character. Everything else that needs work is left open with a comment and is not counted. Accounts with three automatically closed pull requests within 90 days are blocked.
 
 Merged contributions receive a promotion key for the in-app character. The maintainer issues keys by hand as a pull request comment, so it may take a few days. Report security issues privately as described in [SECURITY.md](SECURITY.md).
