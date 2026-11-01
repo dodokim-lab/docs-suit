@@ -4,6 +4,7 @@
 name: contrib
 on:
   pull_request_target:
+    branches: [main]  # 다른 브랜치로 온 PR 에는 그 브랜치의 옛 판정이 돌지 않게 main 으로 온 PR 만 받는다
     types: [opened, reopened, synchronize, edited, ready_for_review]
   workflow_dispatch:  # BLOCK_TOKEN 이 차단 목록을 읽는지 확인한다
 permissions: {}
@@ -27,15 +28,40 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      # 판정은 이벤트가 가리키는 커밋으로 한다. 그사이 새 커밋이 오면 그 커밋의 판정이 따로 돈다
       - name: PR 객체 받기
         env:
           PR: ${{ github.event.pull_request.number }}
-        run: git fetch --no-tags origin "refs/pull/$PR/head:refs/contrib/head"
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git fetch --no-tags origin "refs/pull/$PR/head:refs/contrib/head"
+          git cat-file -e "$HEAD_SHA^{commit}" 2>/dev/null || git fetch --no-tags origin "$HEAD_SHA"
       - id: judge
         name: 판정
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: python3 tools/contrib-eval.py judge --head refs/contrib/head
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 tools/contrib-eval.py judge --head "$HEAD_SHA"
+
+  unready:
+    # 새 커밋이 오면 지난 커밋에 붙인 검토 대기 라벨을 판정이 끝나기 전에 뗀다. PR 의 파일은 읽지 않는다
+    if: >-
+      github.event_name == 'pull_request_target' &&
+      github.event.action == 'synchronize' &&
+      !contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false
+      - name: 검토 대기 라벨 떼기
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 tools/contrib-eval.py unready
 
   act:
     needs: judge

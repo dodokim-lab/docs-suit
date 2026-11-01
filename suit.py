@@ -288,7 +288,8 @@ def _hidden(ch):
 
 def _emoji_base(ch):
     """FE0F 를 붙여 이모지로 그리는 글자. 기호와 키캡 숫자, 느낌표 두 개 같은 몇 글자다."""
-    return unicodedata.category(ch) in ("So", "Sm") or ch in "#*0123456789" or ord(ch) in (0x203C, 0x2049, 0x3030, 0x303D)
+    return (unicodedata.category(ch) in ("So", "Sm", "Sk") or ch in "#*0123456789"
+            or ord(ch) in (0x203C, 0x2049, 0x2139, 0x3030, 0x303D))
 
 
 def strip_hidden(text):
@@ -4022,7 +4023,7 @@ def selftest_guard(th, check):
           "숨은 문자를 걷지 못하거나 이모지 뒤의 FE0F 를 지웠다")
     hidden = [str(f.relative_to(th.root)) for f in sorted(th.root.rglob("*"))
               if f.suffix in (".md", ".yaml", ".txt", ".css") and f.is_file()
-              and any(_hidden(c) for c in set(f.read_text(encoding="utf-8")))]
+              and strip_hidden(f.read_text(encoding="utf-8")) != f.read_text(encoding="utf-8")]
     check(not hidden, f"테마 파일에 보이지 않는 문자가 있다: {', '.join(hidden)}")
     # 줄을 가르는 제어 문자가 프로필 값에 섞여도 새 키가 생기지 않는다
     sep = chr(0x2028)
