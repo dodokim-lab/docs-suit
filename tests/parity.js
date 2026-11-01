@@ -32,6 +32,12 @@ for (const c of all.looks) {
     console.log(`캐릭터 그림이 다름: ${JSON.stringify(c.slot)} 차수 ${c.tier} → ${JSON.stringify(look)} / 기대 ${JSON.stringify(c.look)}`);
   }
 }
-const total = cases.length + all.slots.length + all.looks.length;
+for (const c of all.texts) {
+  if (C.cleanText(c.raw) !== c.expected) {
+    bad++;
+    console.log(`한 줄 답이 다름: ${JSON.stringify(c.raw)} → ${JSON.stringify(C.cleanText(c.raw))} / 기대 ${JSON.stringify(c.expected)}`);
+  }
+}
+const total = cases.length + all.slots.length + all.looks.length + all.texts.length;
 console.log(bad ? `parity 실패 ${bad}/${total}` : `parity 통과 ${total}건`);
 process.exit(bad ? 1 : 0);

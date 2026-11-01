@@ -255,12 +255,15 @@
       return cost;
     }
 
+    // suit.py CTRL_RE 와 같은 문자. 줄을 가르는 제어 문자가 값에 섞여 슬롯 파일에 새 키가 생기지 않게 빈칸으로 바꾼다.
+    const CTRL = /[\x00-\x1f\x7f-\x9f\u{2028}\u{2029}\u{feff}]/gu;
+
     function cleanText(s) {
-      return String(s).replace(/"/g, "”").split(/\s+/).filter(Boolean).join(" ");
+      return String(s).replace(CTRL, " ").replace(/"/g, "”").split(/\s+/).filter(Boolean).join(" ");
     }
 
     function quote(v) {
-      v = String(v);
+      v = String(v).replace(CTRL, " ");
       if (v === "" || v !== v.trim() || /[,:#[\]{}'"]/.test(v)) return '"' + v.replace(/"/g, "”") + '"';
       return v;
     }
