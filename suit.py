@@ -2619,7 +2619,11 @@ def offer_link():
     """대화로 캐릭터를 만든 사람에게 docs-suit 짧은 명령을 걸지 한 번 묻는다. 이미 걸려 있으면 묻지 않는다."""
     if cli_run() == "docs-suit" or not sys.stdin.isatty():
         return
-    if _ask(f"\n어느 폴더에서나 `docs-suit` 로 부르게 {LINK_DIR} 에 링크를 걸까? [Y/n] ", "y").lower() not in ("y", "yes", "ㅛ"):
+    try:  # 입력이 끝났으면 답이 없는 것이라 걸지 않는다. Enter 를 친 것과 다르다
+        ans = input(f"\n어느 폴더에서나 `docs-suit` 로 부르게 {LINK_DIR} 에 링크를 걸까? [Y/n] ").strip() or "y"
+    except EOFError:
+        return
+    if ans.lower() not in ("y", "yes", "ㅛ"):
         print(f"나중에 `{engine_run()} link` 로 건다.")
         return
     try:
@@ -3961,8 +3965,10 @@ def selftest_usage(th, check, quiet):
             return True
 
     with tempfile.TemporaryDirectory() as td:
-        saved = {k: os.environ.pop(k, None) for k in ("DOCS_SUIT_PROFILE", "DOCS_SUIT_HOME")}
+        saved = {k: os.environ.pop(k, None) for k in ("DOCS_SUIT_PROFILE", "DOCS_SUIT_HOME", "HOME")}
         os.environ["DOCS_SUIT_HOME"] = str(Path(td) / "conf")
+        os.environ["HOME"] = str(Path(td).resolve() / "home")  # 대화 끝의 링크 질문이 사람의 ~/.local/bin 을 건드리지 않게 한다
+        Path(os.environ["HOME"]).mkdir()
         cwd_was, stdin_was = os.getcwd(), sys.stdin
         proj, other = Path(td).resolve() / "글 폴더", Path(td).resolve() / "other"
         proj.mkdir()
@@ -4022,6 +4028,8 @@ def selftest_usage(th, check, quiet):
                                input="결과를 보고드립니다.\n".encode("utf-8"), capture_output=True, timeout=60)
             check(r.returncode == 0 and "검사 ·" in r.stdout.decode("utf-8", "replace"),
                   f"표준 입출력이 utf-8 이 아닌 셸에서 check 가 깨진다: {r.stderr.decode('utf-8', 'replace')[-200:]}")
+            check(not os.path.lexists(os.path.expanduser(LINK_DIR + "/docs-suit")),
+                  "입력이 끝난 대화형 bootstrap 이 답 없이 docs-suit 링크를 걸었다")
         finally:
             os.chdir(cwd_was)
             sys.stdin = stdin_was
@@ -5130,8 +5138,9 @@ LINK_DIR = "~/.local/bin"
 
 
 def cli_name():
-    """도움말에 적을 이름. 링크로 부르면 docs-suit 이고, 저장소의 파일을 직접 부르면 suit.py 다."""
-    return "docs-suit" if Path(sys.argv[0]).name == "docs-suit" else "suit.py"
+    """도움말에 적을 이름. 복사해 그대로 칠 수 있는 꼴로 쓴다. 링크로 불렀거나 링크가 이 저장소를 가리키면 docs-suit 이고,
+    아니면 python3 와 절대 경로다."""
+    return "docs-suit" if Path(sys.argv[0]).name == "docs-suit" else cli_run()
 
 
 def cli_run():
