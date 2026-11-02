@@ -8,18 +8,25 @@ docs-suit 를 설치하고 쓰는 법을 기능마다 적은 문서입니다. �
 
 파이썬 3.9 이상만 있으면 되고, 따로 설치할 패키지는 없습니다. macOS 와 Linux 에서 확인했고, Windows 에서는 아직 확인하지 않아서 설치 없이 쓰는 웹 판을 씁니다. PDF 를 재려면 pdftotext 가 더 있어야 하고, 까는 법은 "다 쓴 글을 재고 검토받기" 절에 있습니다.
 
-1. 저장소를 받아 두고, 글을 쓰는 폴더에서 bootstrap 을 돌립니다.
+1. 저장소를 받아 `docs-suit` 명령을 걸고, 글을 쓰는 폴더에서 `init` 을 부릅니다.
    ```sh
    git clone https://github.com/dodokim-lab/docs-suit.git ~/docs-suit
+   python3 ~/docs-suit/suit.py link
    cd <글을 쓰는 폴더>
-   python3 ~/docs-suit/suit.py bootstrap
+   docs-suit init
    ```
 2. 묻는 대로 클래스와 페르소나, 쓰는 AI 도구, 캐릭터의 머리 모양을 고릅니다. 답하기 싫은 질문은 넘어가도 됩니다.
 3. 끝나면 만든 캐릭터와 다음에 할 일이 나옵니다. 이 폴더에서 고른 도구를 새로 열고 "보고서 써 줘" 처럼 평소대로 글을 부탁합니다. 설치된 스킬이 규칙을 조립해 따르고, 다 쓴 뒤 본문이 규칙을 지켰는지 잽니다.
 
-스킬은 bootstrap 을 돌린 폴더에만 깔리고, 그 폴더에서 연 에이전트만 부릅니다. docs-suit 저장소 폴더나 홈 폴더에서 돌리면 글을 쓰는 폴더를 처음에 묻습니다. 다른 폴더에서도 쓰려면 그 폴더에서 `export` 로 한 번 더 깝니다. 자세한 자리는 "도구마다 스킬이 깔리는 곳" 절에 있습니다.
+`link` 는 `~/.local/bin/docs-suit` 에 저장소의 `suit.py` 로 가는 링크를 겁니다. 그 폴더가 PATH 에 없으면 셸 설정 파일에 더할 줄을 알려 주고, 셸 설정 파일은 직접 고치지 않습니다. 링크라서 저장소를 새 판으로 받으면 명령도 새 판이 됩니다. 링크 없이 `python3 ~/docs-suit/suit.py <명령>` 으로 불러도 같습니다. 링크를 걸지 않고 대화로 캐릭터를 만들면, 끝에서 링크를 걸지 한 번 묻습니다.
 
-설치된 스킬은 받은 폴더의 `suit.py` 를 부르므로, 받은 폴더를 옮기거나 지우면 스킬이 멈춥니다. 옮겼다면 스킬을 깐 폴더마다 `python3 <새 자리>/suit.py export --agent <도구>` 로 다시 깝니다.
+`init` 은 지금 쓰는 캐릭터가 있으면 그 캐릭터가 고른 도구에 스킬만 깔고, 없으면 bootstrap 대화로 넘어갑니다. 다른 폴더에서 만든 캐릭터가 있으면 그 대화의 첫 질문에서 이어서 키울지 고릅니다. 쓰던 캐릭터가 있어도 새로 만들려면 `docs-suit init --new` 를 부릅니다.
+
+스킬은 `init` 을 부른 폴더에만 깔리고, 그 폴더에서 연 에이전트만 부릅니다. docs-suit 저장소 폴더나 홈 폴더에서는 깔지 않습니다. 다른 폴더에서도 쓰려면 그 폴더에서 `docs-suit init` 을 한 번 더 부릅니다. 자세한 자리는 "도구마다 스킬이 깔리는 곳" 절에 있습니다.
+
+인자 없이 `docs-suit` 만 부르면 명령을 시작하기, 쓰면서, 설정, 에이전트와 개발용의 네 묶음으로 보이고, 지금 폴더에서 할 일을 한 줄 덧붙입니다. 명령마다 옵션은 `docs-suit <명령> --help` 로 봅니다.
+
+설치된 스킬은 받은 폴더의 `suit.py` 를 부르므로, 받은 폴더를 옮기거나 지우면 스킬이 멈춥니다. 옮겼다면 `python3 <새 자리>/suit.py link --force` 로 링크를 다시 걸고, 스킬을 깐 폴더마다 `docs-suit update --no-pull` 로 다시 깝니다.
 
 bootstrap 은 그 폴더 이름으로 프로필 슬롯을 만들어 폴더에 잇고, 답은 저장소 밖의 `~/.config/docs-suit/profiles/<폴더 이름>.yaml` 에 남아서 실수로 커밋되지 않습니다. 에이전트에게 "docs-suit 세팅해 줘" 라고 해도 스킬이 같은 질문을 대신 묻고 같은 자리에 남깁니다.
 
@@ -378,9 +385,10 @@ Claude Code, Antigravity CLI, Codex CLI 는 실제 요청을 넣어 작업 폴�
 
 ```sh
 cd <글을 쓰는 폴더>
-python3 <docs-suit 경로>/suit.py export --agent claude,codex   # 이 폴더에 스킬을 깔거나 다시 깐다
-python3 <docs-suit 경로>/suit.py export --remove               # 이 폴더에 깐 스킬을 거둔다
-python3 <docs-suit 경로>/suit.py export --agent web            # 웹 채팅용 지침을 파일로
+docs-suit init                          # 캐릭터가 고른 도구로 이 폴더에 스킬을 깐다
+docs-suit export --agent claude,codex   # 도구를 직접 골라 깔거나 다시 깐다
+docs-suit remove                        # 이 폴더에 깐 스킬을 거둔다. export --remove 와 같다
+docs-suit export --agent web            # 웹 채팅용 지침을 파일로
 ```
 
 예전 판은 홈 폴더에 스킬을 깔았습니다. 그때 깐 스킬이 남아 있으면 `export` 가 알려 주고, `python3 <docs-suit 경로>/suit.py export --remove --global` 로 거둡니다. docs-suit 가 만든 파일만 지우고, 손으로 만든 스킬은 남깁니다.
@@ -389,30 +397,32 @@ Claude Code 에서 스킬 대신 output style 로 쓰려면 `compose --format ou
 
 ## 새 판으로 올리려면
 
-`git pull` 로 받으면 엔진과 규칙 문서는 바로 새 판이 되지만, 폴더에 깐 SKILL.md 와 웹 채팅용 지침에는 만들 때의 판이 남습니다. 그래서 받은 뒤에 스킬을 깐 폴더마다 `export` 를 다시 돌리고, 웹 채팅에 붙여 쓰는 지침도 다시 뽑아 붙여 넣습니다.
+저장소를 새로 받으면 엔진과 규칙 문서는 바로 새 판이 되지만, 폴더에 깐 SKILL.md 와 웹 채팅용 지침에는 만들 때의 판이 남습니다. `docs-suit update` 는 저장소를 `git pull --ff-only` 로 받고, 지금 폴더에 깔린 스킬을 같은 도구로 다시 깝니다. 스킬을 깐 다른 폴더에서는 `--no-pull` 을 붙여 스킬만 다시 깝니다. 웹 채팅에 붙여 쓰는 지침은 따로 다시 뽑아 붙여 넣습니다.
 
 ```sh
-git -C <docs-suit 경로> pull
 cd <스킬을 깐 폴더>
-python3 <docs-suit 경로>/suit.py export --agent claude,codex   # 처음에 깐 도구를 그대로 적는다
-python3 <docs-suit 경로>/suit.py export --agent web            # 웹 채팅용 지침을 다시 뽑는다
+docs-suit update                  # 새 판을 받고 이 폴더의 스킬을 다시 깐다
+cd <스킬을 깐 다른 폴더>
+docs-suit update --no-pull        # 이 폴더의 스킬만 다시 깐다
+docs-suit export --agent web      # 웹 채팅용 지침을 다시 뽑는다
 ```
 
-지금 판은 `python3 <docs-suit 경로>/suit.py --version` 으로 봅니다. 프로필과 성장 기록, 받은 승급 키는 저장소 밖 `~/.config/docs-suit/` 에 있어서 새 판을 받아도 그대로 남습니다. 상태 줄과 Codex 훅은 엔진을 직접 부르므로 다시 걸지 않아도 됩니다.
+저장소에서 손으로 고친 파일이 있어 받기가 실패하면 `update` 가 멈추고 알려 줍니다. 지금 판은 `docs-suit --version` 으로 봅니다. 프로필과 성장 기록, 받은 승급 키는 저장소 밖 `~/.config/docs-suit/` 에 있어서 새 판을 받아도 그대로 남습니다. 상태 줄과 Codex 훅은 엔진을 직접 부르므로 다시 걸지 않아도 됩니다.
 
 ## 지우려면
 
 스킬을 거두는 명령이 받은 저장소의 `suit.py` 를 쓰므로, 아래 순서대로 지우고 저장소 폴더는 맨 마지막에 지웁니다.
 
-1. 스킬을 깐 폴더마다 `export --remove` 로 거둡니다. docs-suit 가 만든 SKILL.md 만 지우고, 비게 된 스킬 폴더와 `.git/info/exclude` 에 적은 줄도 함께 치웁니다.
+1. 스킬을 깐 폴더마다 `docs-suit remove` 로 거둡니다. docs-suit 가 만든 SKILL.md 만 지우고, 비게 된 스킬 폴더와 `.git/info/exclude` 에 적은 줄도 함께 치웁니다.
    ```sh
    cd <스킬을 깐 폴더>
-   python3 <docs-suit 경로>/suit.py export --remove
+   docs-suit remove
    ```
 2. 예전 판이 홈 폴더에 깐 스킬이 남아 있으면 `python3 <docs-suit 경로>/suit.py export --remove --global` 로 거둡니다.
 3. 폴더에 슬롯을 이을 때 생긴 폴더 파일 `.docs-suit.yaml` 은 폴더마다 손으로 지웁니다. 팀 저장소에 올린 파일이면 함께 쓰는 사람과 먼저 의논합니다.
 4. 상태 줄이나 Codex 훅을 걸었으면 `~/.claude/settings.json` 과 `~/.codex/hooks.json` 에서 docs-suit 를 부르는 줄을 뺍니다. 그대로 두면 지운 엔진을 부르다 실패합니다. output style 로 뽑아 둔 파일이 있으면 그 파일도 지웁니다.
-5. 설정 폴더와 받은 저장소를 지웁니다. 설정 폴더에는 프로필 슬롯과 성장 기록, 내 문체, 받은 승급 키, 웹 채팅용 지침이 모두 들어 있어서 지우면 되살릴 수 없습니다. `DOCS_SUIT_HOME` 으로 설정 폴더를 옮겼다면 그 폴더를 지웁니다.
+5. `docs-suit link --remove` 로 `~/.local/bin` 의 링크를 거둡니다. 이 저장소를 가리키는 링크만 지웁니다.
+6. 설정 폴더와 받은 저장소를 지웁니다. 설정 폴더에는 프로필 슬롯과 성장 기록, 내 문체, 받은 승급 키, 웹 채팅용 지침이 모두 들어 있어서 지우면 되살릴 수 없습니다. `DOCS_SUIT_HOME` 으로 설정 폴더를 옮겼다면 그 폴더를 지웁니다.
    ```sh
    rm -rf ~/.config/docs-suit
    rm -rf <docs-suit 경로>

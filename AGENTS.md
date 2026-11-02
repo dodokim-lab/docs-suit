@@ -6,7 +6,7 @@ docs-suit 를 고치는 사람과 AI 에이전트가 읽는 작업 규칙이다.
 
 | 자리 | 내용 |
 |---|---|
-| `suit.py` | 엔진 한 파일. bootstrap, compose, check, review, card, look, preset, promote, status, widget, serve, export, bundle, selftest |
+| `suit.py` | 엔진 한 파일. bootstrap, compose, check, review, card, look, preset, promote, status, widget, serve, export, bundle, selftest. 사람이 치는 줄임 명령 init, remove, update, link 도 있고, 맨 위 도움말의 묶음과 한 줄 설명은 `CLI_GROUPS` 와 `CLI_HELP` 에 둔다. 실행 권한을 두어 `link` 가 건 `docs-suit` 링크로 바로 불린다 |
 | `themes/ko/` | 한국어 테마 팩. 축과 값은 `axes.yaml`, 독자와 문서 종류는 `defaults.yaml`, 클래스는 `classes/`, 페르소나 질문은 `persona.yaml` |
 | `themes/ko/<축>/<값>.md` | 값마다 규칙 문서 한 장. 끝의 `## 보기` 절은 웹 카드에만 쓰고 지침에는 싣지 않는다 |
 | `themes/ko/kinds/<종류>.md` | 문서 종류의 틀. 틀이 꼭 쓰라고 한 절은 `defaults.yaml` 의 `must` 에 낱말로 적는다 |

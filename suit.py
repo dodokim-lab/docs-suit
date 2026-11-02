@@ -2611,7 +2611,21 @@ def cmd_bootstrap(a, th):
     print()
     cmd_card(argparse.Namespace(profile=slot, json=False, color="auto"), th)
     print("\n" + "\n".join(bootstrap_next(th, cls, agents, written, where, None if bind_to else profile_source(slot)[1])))
+    offer_link()
     return 0
+
+
+def offer_link():
+    """대화로 캐릭터를 만든 사람에게 docs-suit 짧은 명령을 걸지 한 번 묻는다. 이미 걸려 있으면 묻지 않는다."""
+    if cli_run() == "docs-suit" or not sys.stdin.isatty():
+        return
+    if _ask(f"\n어느 폴더에서나 `docs-suit` 로 부르게 {LINK_DIR} 에 링크를 걸까? [Y/n] ", "y").lower() not in ("y", "yes", "ㅛ"):
+        print(f"나중에 `{engine_run()} link` 로 건다.")
+        return
+    try:
+        cmd_link(argparse.Namespace(dir=None, remove=False, force=False), None)
+    except Missing as e:
+        print(f"링크를 걸지 못했다: {e}")
 
 
 def writing_folder():
@@ -2661,7 +2675,7 @@ def bootstrap_next(th, cls, agents, written, where=None, unbound=None):
         out.append(f"- {where} 에서 {', '.join(picked)} 를 새로 열고 {ask} 처럼 평소대로 부탁한다. "
                    "스킬이 규칙을 조립하고, 다 쓴 글을 재서 캐릭터를 키운다.")
         out.append(f"- 스킬은 이 폴더에서만 불린다. 다른 폴더에서도 쓰려면 그 폴더에서 "
-                   f"`{run} export --agent {','.join(x for x in agents if x != 'web')}` 를 돌린다.")
+                   f"`{run} init` 을 돌린다. 이 캐릭터로 이을지 묻고 같은 도구에 깐다.")
     if web:
         out.append(f"- 웹 채팅에는 {web} 의 내용을 대화 맨 앞에 붙여 넣고 {ask} 처럼 부탁한다.")
     if not written:
@@ -4923,6 +4937,43 @@ def selftest(th):
                 if v is not None:
                     os.environ[k] = v
 
+    # 명령줄 입구. 모든 명령이 도움말 묶음에 한 번씩 있고, init 과 remove, link 는 지금 폴더와 링크 폴더만 건드린다
+    ap = build_parser()
+    names = list(next(x for x in ap._actions if isinstance(x, argparse._SubParsersAction)).choices)
+    grouped = [n for _, ns in CLI_GROUPS for n in ns]
+    check(sorted(grouped) == sorted(names) and len(set(grouped)) == len(grouped),
+          f"도움말 묶음에 빠지거나 겹친 명령이 있다: {sorted(set(names) ^ set(grouped))}")
+    check(set(CLI_HELP) == set(names), f"한 줄 설명이 없거나 남는 명령이 있다: {sorted(set(names) ^ set(CLI_HELP))}")
+    with tempfile.TemporaryDirectory() as td:
+        saved = {k: os.environ.pop(k, None) for k in ("DOCS_SUIT_PROFILE", "DOCS_SUIT_HOME")}
+        os.environ["DOCS_SUIT_HOME"] = str(Path(td) / "conf")
+        cwd_was = os.getcwd()
+        proj, bin_ = Path(td).resolve() / "proj", Path(td) / "bin"
+        proj.mkdir()
+        os.chdir(proj)
+        try:
+            write_profile({"profile": {"class": "office", "agents": ["claude"]}, "persona": {"call": "시험"}}, "default")
+            quiet(cmd_init, ap.parse_args(["init"]), th)
+            check(installed_agents(proj) == ["claude"], "init 이 프로필에 적힌 도구로 스킬을 깔지 않는다")
+            quiet(cmd_remove, ap.parse_args(["remove"]), th)
+            check(installed_agents(proj) == [], "remove 가 지금 폴더에 깐 스킬을 거두지 않는다")
+            quiet(cmd_link, ap.parse_args(["link", "--dir", str(bin_)]), th)
+            check((bin_ / "docs-suit").resolve() == (HERE / "suit.py").resolve(), "link 가 저장소의 suit.py 로 링크를 걸지 않는다")
+            quiet(cmd_link, ap.parse_args(["link", "--dir", str(bin_), "--remove"]), th)
+            check(not (bin_ / "docs-suit").is_symlink(), "link --remove 가 링크를 거두지 않는다")
+            (bin_ / "docs-suit").write_text("x", encoding="utf-8")
+            try:
+                quiet(cmd_link, ap.parse_args(["link", "--dir", str(bin_), "--force"]), th)
+            except Missing:
+                pass
+            check((bin_ / "docs-suit").read_text(encoding="utf-8") == "x", "link 가 링크가 아닌 파일을 덮었다")
+        finally:
+            os.chdir(cwd_was)
+            for k, v in saved.items():
+                os.environ.pop(k, None)
+                if v is not None:
+                    os.environ[k] = v
+
     # 로컬 화면 서버. 열쇠와 Host 를 확인하고, 고른 값을 실행한 폴더 기준의 슬롯이나 폴더 파일에 쓴다
     import urllib.error
     import urllib.request
@@ -5037,6 +5088,345 @@ def selftest(th):
     return 0 if not problems else 1
 
 
+# ---------------------------------------------------------------- 명령줄 입구
+CLI_ABOUT = "docs-suit: 문서에 옷을 입히는 AI 글쓰기 테마 엔진"
+# 맨 위 도움말의 묶음. 사람이 치는 명령을 앞에 두고, 에이전트와 개발용 명령은 뒤에 이름만 모은다
+CLI_GROUPS = (
+    ("시작하기", ("init", "remove", "update", "link", "bootstrap", "export")),
+    ("쓰면서", ("card", "serve", "check", "review")),
+    ("설정", ("set", "profile", "preset", "look", "word", "learn", "voice", "growth", "promote")),
+    ("에이전트와 개발용", ("compose", "get", "list", "picked", "status", "widget", "bundle", "selftest")),
+)
+CLI_HELP = {
+    "init": "지금 폴더에 스킬을 깐다. 쓰던 캐릭터가 없으면 bootstrap 대화로 만든다",
+    "remove": "지금 폴더에 깐 스킬을 거둔다",
+    "update": "저장소를 새 판으로 받고 지금 폴더의 스킬을 다시 깐다",
+    "link": "어느 폴더에서나 docs-suit 로 부르게 ~/.local/bin 에 링크를 건다",
+    "bootstrap": "클래스와 쓰는 도구, 머리 모양을 물어 캐릭터를 만들고 스킬을 깐다",
+    "export": "고른 도구에 스킬을 깔거나 거둔다",
+    "card": "캐릭터 카드를 보인다",
+    "serve": "캐릭터와 테마 설정 화면을 브라우저에 띄운다",
+    "check": "쓴 글을 재서 규칙을 어긴 곳을 보이고 성장 기록에 남긴다",
+    "review": "쓴 글을 검토하는 지침을 조립한다",
+    "set": "말투나 분량 같은 값을 프로필이나 폴더 파일에 저장한다",
+    "profile": "지금 쓰는 슬롯을 보거나 고른다",
+    "preset": "테마 조합을 보거나 고르거나 내보낸다",
+    "look": "캐릭터의 머리와 옷 색, 소품을 바꾼다",
+    "word": "지금 폴더의 용어집에 틀린 말과 바른 말을 남긴다. 인자 없이 부르면 용어집을 보인다",
+    "learn": "예전에 쓴 글을 재서 값을 제안한다. 원문은 남기지 않는다",
+    "voice": "슬롯의 내 문체 문서를 보거나 남기거나 지운다",
+    "growth": "캐릭터 키우기를 켜고 끄거나 문서마다 받은 경험치를 보인다",
+    "promote": "기여하고 받은 승급 키를 넣거나 받은 키를 보인다",
+    "compose": "문서 종류와 독자에 맞춰 AI 에게 줄 지침 한 장을 조립한다",
+    "get": "문서 종류와 독자에 맞춰 정해지는 값을 보인다",
+    "list": "클래스와 문서 종류, 독자, 고를 수 있는 값을 보인다",
+    "picked": "테마 설정 탭에서 이번 문서에만 고른 값을 compose 인자로 낸다",
+    "status": "에이전트의 상태 줄에 캐릭터를 그린다",
+    "widget": "터미널 옆 칸에 캐릭터 창을 띄운다",
+    "bundle": "웹 화면이 읽는 themes.json 과 주소 해시를 다시 만든다",
+    "selftest": "데이터 정합과 엔진 계약을 스스로 잰다",
+}
+LINK_DIR = "~/.local/bin"
+
+
+def cli_name():
+    """도움말에 적을 이름. 링크로 부르면 docs-suit 이고, 저장소의 파일을 직접 부르면 suit.py 다."""
+    return "docs-suit" if Path(sys.argv[0]).name == "docs-suit" else "suit.py"
+
+
+def cli_run():
+    """사람에게 보이는 안내에 적을 명령. docs-suit 링크가 PATH 에서 이 저장소를 가리키면 짧게 쓰고, 아니면 절대 경로로 쓴다.
+    SKILL.md 는 에이전트의 PATH 가 사람 셸과 다를 수 있어 늘 engine_run() 을 쓴다."""
+    found = shutil.which("docs-suit")
+    if found and Path(found).resolve() == (HERE / "suit.py").resolve():
+        return "docs-suit"
+    return engine_run()
+
+
+def cli_overview(prog):
+    width = max(len(n) for n in CLI_HELP)
+    out = []
+    for title, names in CLI_GROUPS:
+        out.append(f"{title}:")
+        if title == CLI_GROUPS[-1][0]:
+            out.append("  " + ", ".join(names))
+        else:
+            out += [f"  {n.ljust(width)}  {CLI_HELP[n]}" for n in names]
+        out.append("")
+    out.append(f"명령마다 `{prog} <명령> --help` 로 옵션을 본다.")
+    return "\n".join(out)
+
+
+def installed_agents(folder):
+    """이 폴더에 docs-suit 가 깐 스킬의 자리 이름. export --agent 에 그대로 넘긴다."""
+    return [a for a, t in AGENT_TARGETS.items()
+            if a != "web" and (folder / t["path"]).is_file() and made_by_export(folder / t["path"])]
+
+
+def cli_start_hint():
+    """인자 없이 불렀을 때 도움말 밑에 붙일 다음 할 일."""
+    run = cli_run()
+    try:
+        folder = export_folder()
+    except Missing:
+        return f"처음이면 글을 쓰는 폴더로 옮겨 `{run} init` 을 부른다."
+    if installed_agents(folder):
+        return f"이 폴더에는 스킬이 깔려 있다. 캐릭터는 `{run} card` 로 보고, 새 판은 `{run} update` 로 받는다."
+    return f"이 폴더에는 아직 스킬이 없다. `{run} init` 으로 시작한다."
+
+
+def cmd_init(a, th):
+    folder = export_folder()
+    path, slot, _, why = profile_source(a.profile)
+    data = read_slot(path, warn_stderr)
+    cls = slot_class(data)
+    if a.new or not (isinstance(cls, str) and cls in th.classes):
+        if a.dry_run:
+            print("쓰던 캐릭터가 없어 bootstrap 대화로 캐릭터를 만들 예정이다" if not a.new else "bootstrap 대화로 새 캐릭터를 만들 예정이다")
+            return 0
+        if not sys.stdin.isatty():
+            raise Missing("캐릭터를 만드는 bootstrap 대화는 터미널에서만 된다. 터미널에서 init 을 부르거나 "
+                          "`bootstrap --class <클래스> --yes` 로 만든다")
+        return cmd_bootstrap(build_parser().parse_args(["bootstrap"] + (["--profile", a.profile] if a.profile else [])), th)
+    agents = [x.strip() for x in (a.agent or "").split(",") if x.strip()] or list((data.get("profile") or {}).get("agents") or [])
+    if not agents:
+        raise Missing("프로필에 깔 도구가 적혀 있지 않다. `--agent claude` 처럼 고른다")
+    name = (data.get("persona") or {}).get("call") or slot or "기본"
+    print(f"{name} 캐릭터(슬롯 {slot or path.stem}, {th.classes[cls]['label']})로 {folder} 에 스킬을 깐다. "
+          f"새 캐릭터를 만들려면 `{cli_run()} init --new` 를 부른다.")
+    export(th, agents, None, a.dry_run, load_profile(warn_stderr, a.profile), voice=voice_text(a.profile), folder=folder)
+    return 0
+
+
+def cmd_remove(a, th):
+    agents = [x.strip() for x in (a.agent or "").split(",") if x.strip()]
+    unexport(agents or None, dry_run=a.dry_run)
+    return 0
+
+
+def cmd_update(a, th):
+    run = cli_run()
+    if not a.no_pull:
+        if not (HERE / ".git").exists():
+            raise Missing(f"{HERE} 는 git 으로 받은 저장소가 아니라 새 판을 받을 수 없다. 새로 받은 뒤 `--no-pull` 로 스킬만 다시 깐다")
+        if subprocess.run(["git", "-C", str(HERE), "pull", "--ff-only"]).returncode:
+            raise Missing(f"git pull 이 실패했다. {HERE} 에서 고친 파일을 정리한 뒤 다시 부른다")
+    try:
+        folder = export_folder()
+    except Missing:
+        print(f"스킬을 다시 깔려면 스킬을 깐 폴더에서 `{run} update --no-pull` 을 부른다.")
+        return 0
+    agents = installed_agents(folder)
+    if not agents:
+        print(f"{folder} 에는 docs-suit 가 깐 스킬이 없다. 여기서 쓰려면 `{run} init` 을 부른다.")
+        return 0
+    # 이 프로세스는 받기 전의 코드를 들고 있어서, 받은 새 판의 엔진을 따로 띄워 스킬을 쓴다
+    code = subprocess.run([sys.executable, str(HERE / "suit.py"), "export", "--agent", ",".join(agents)], cwd=str(folder)).returncode
+    if not code:
+        print(f"스킬을 깐 다른 폴더가 있으면 그 폴더에서도 `{run} update --no-pull` 을 부른다.")
+    return code
+
+
+def cmd_link(a, th):
+    d = Path(os.path.expanduser(a.dir or LINK_DIR))
+    dst, src = d / "docs-suit", (HERE / "suit.py").resolve()
+    ours = dst.is_symlink() and dst.resolve() == src
+    if a.remove:
+        if ours:
+            dst.unlink()
+            print(f"거뒀다: {dst}")
+        elif dst.is_symlink() or dst.exists():
+            raise Missing(f"{dst} 는 이 저장소의 suit.py 를 가리키지 않아 그대로 둔다")
+        else:
+            print("거둘 링크가 없다")
+        return 0
+    if ours:
+        print(f"이미 걸려 있다: {dst} → {src}")
+    else:
+        if dst.is_symlink() and a.force:
+            dst.unlink()
+        elif dst.is_symlink():
+            raise Missing(f"{dst} 가 다른 곳({os.readlink(str(dst))})을 가리킨다. 이 저장소로 바꾸려면 --force 를 붙인다")
+        elif dst.exists():
+            raise Missing(f"{dst} 에 링크가 아닌 파일이 있어 건드리지 않는다. --dir 로 다른 폴더를 고른다")
+        mode = src.stat().st_mode
+        if not mode & 0o100:  # zip 으로 받으면 실행 권한이 빠져 있다
+            os.chmod(str(src), mode | 0o111)
+        d.mkdir(parents=True, exist_ok=True)
+        dst.symlink_to(src)
+        print(f"걸었다: {dst} → {src}")
+    on_path = any(Path(os.path.expanduser(p)).resolve() == d.resolve() for p in os.environ.get("PATH", "").split(os.pathsep) if p)
+    if not on_path:
+        home = Path.home()
+        shown = "$HOME/" + str(d.resolve().relative_to(home.resolve())) if home.resolve() in d.resolve().parents else str(d)
+        print(f"{d} 가 PATH 에 없다. 셸 설정 파일(~/.zshrc 나 ~/.bashrc)에 아래 줄을 더하고 터미널을 새로 연다.\n"
+              f"  export PATH=\"{shown}:$PATH\"")
+    else:
+        print("이제 어느 폴더에서나 `docs-suit` 로 부른다. 처음이면 글을 쓰는 폴더에서 `docs-suit init` 을 부른다.")
+    return 0
+
+
+def build_parser(prog="suit.py"):
+    """명령줄 해석기. 서브명령마다 CLI_HELP 의 한 줄을 설명으로 달고, 맨 위 도움말은 CLI_GROUPS 의 묶음으로 보인다."""
+    ap = argparse.ArgumentParser(prog=prog, usage=f"{prog} <명령> [옵션]", description=CLI_ABOUT,
+                                 epilog=cli_overview(prog), formatter_class=argparse.RawDescriptionHelpFormatter, add_help=False)
+    ap._optionals.title = "옵션"
+    ap.add_argument("-h", "--help", action="help", help="이 도움말을 보인다")
+    ap.add_argument("--version", action="version", version=f"docs-suit {VERSION}", help="판 번호를 보인다")
+    # 명령 목록은 epilog 의 묶음이 대신 보여서 argparse 가 찍는 목록은 숨긴다
+    sub = ap.add_subparsers(dest="cmd", metavar="<명령>", help=argparse.SUPPRESS)
+
+    def add(name, **kw):
+        p = sub.add_parser(name, prog=f"{prog} {name}", description=CLI_HELP[name], add_help=False, **kw)
+        p._optionals.title = "옵션"
+        p.add_argument("-h", "--help", action="help", help="이 도움말을 보인다")
+        return p
+    slot = argparse.ArgumentParser(add_help=False)
+    slot.add_argument("--profile", metavar="슬롯", help="이 슬롯의 프로필을 쓴다. 폴더 파일과 profile use 보다 앞선다")
+    b = add("bootstrap", parents=[slot])
+    b.add_argument("--class", dest="cls")
+    for k in PERSONA_IN_PROMPT:
+        b.add_argument(f"--{k}")
+    b.add_argument("--docs", help="자주 쓰는 문서 종류. 쉼표로 잇는다")
+    b.add_argument("--agents", help="스킬을 설치할 도구. 쉼표로 잇는다")
+    b.add_argument("--hair", help="처음 머리 모양. bootstrap --questions 의 hairs 에서 고른다")
+    b.add_argument("--preset", help="이 테마 조합으로 시작한다. suit.py preset list 로 본다")
+    b.add_argument("--yes", action="store_true", help="묻지 않고 진행한다")
+    b.add_argument("--here", action="store_true", help="지금 폴더의 .docs-suit.yaml 이 --profile 로 준 슬롯을 쓰게 한다")
+    b.add_argument("--force", action="store_true", help="있는 프로필을 .bak 으로 남기고 새로 만든다")
+    b.add_argument("--questions", action="store_true", help="클래스와 페르소나 질문 목록을 JSON 으로 낸다")
+    pr = add("profile", parents=[slot])
+    pr.add_argument("action", nargs="?", choices=("show", "list", "use"), default="show")
+    pr.add_argument("name", nargs="?", help="profile use 로 고를 슬롯 이름")
+    pr.add_argument("--here", action="store_true", help="지금 폴더의 .docs-suit.yaml 에 슬롯을 적는다")
+    li = add("list")
+    li.add_argument("--classes", action="store_true")
+    li.add_argument("--json", action="store_true")
+    for name in ("get", "compose"):
+        p = add(name, parents=[slot])
+        p.add_argument("--class", dest="cls")
+        p.add_argument("--kind")
+        p.add_argument("--audience")
+        p.add_argument("--set", action="append", metavar="축=값")
+        if name == "get":
+            p.add_argument("--json", action="store_true")
+        else:
+            p.add_argument("--chars", type=int)
+            p.add_argument("--format", choices=("prompt", "output-style"), default="prompt")
+            p.add_argument("--html", action="store_true", help="--set markup=html 과 같다. 문서 디자인 규칙도 실린다")
+            p.add_argument("--revise", action="store_true", help="사용자가 준 원문을 다듬을 때. 다듬기 절을 싣는다")
+            p.add_argument("-o", "--output")
+    s = add("set", parents=[slot])
+    s.add_argument("axis")
+    s.add_argument("value", nargs="?")
+    s.add_argument("--unset", action="store_true")
+    s.add_argument("--audience", help="이 독자에게 쓰는 글에만 쓴다")
+    s.add_argument("--kind", help="이 문서 종류에만 쓴다. 문서 종류가 권하는 값을 이긴다")
+    s.add_argument("--here", action="store_true", help="슬롯 대신 지금 폴더의 .docs-suit.yaml 에 쓴다")
+    w = add("word")
+    w.add_argument("wrong", nargs="?")
+    w.add_argument("right", nargs="?")
+    w.add_argument("--unset", action="store_true")
+    e = add("export", parents=[slot])
+    e.add_argument("--agent", help="claude, agents, codex, antigravity, cursor, grok, web, all. 스킬은 지금 폴더에 깐다")
+    e.add_argument("--remove", action="store_true", help="지금 폴더에 깐 스킬을 거둔다. --agent 를 빼면 모두 거둔다")
+    e.add_argument("--global", dest="glob", action="store_true", help="--remove 와 함께 예전 판이 홈 폴더에 깐 스킬을 거둔다")
+    e.add_argument("--dest", help="에이전트별 하위 폴더로 이 폴더 아래에 쓴다. 시험용")
+    e.add_argument("--dry-run", action="store_true")
+    c = add("check", parents=[slot])
+    c.add_argument("file", help="검사할 본문 파일. md, txt 와 docx, pptx, hwpx, odt, odp, html, pdf 를 읽는다. - 이면 표준 입력에서 읽는다")
+    c.add_argument("--class", dest="cls")
+    c.add_argument("--kind")
+    c.add_argument("--audience")
+    c.add_argument("--set", action="append", metavar="축=값")
+    c.add_argument("--chars", type=int)
+    c.add_argument("--revise", action="store_true", help="compose 와 같은 인자를 그대로 붙일 수 있게 받는다. 재는 것은 같다")
+    c.add_argument("--no-record", action="store_true", help="재기만 하고 성장 기록에 남기지 않는다")
+    c.add_argument("--json", action="store_true")
+    rv = add("review", parents=[slot])
+    rv.add_argument("file", nargs="?", help="검토할 본문 파일. - 이면 표준 입력에서 읽고, 주지 않으면 빈자리로 둔다")
+    rv.add_argument("--source", help="글이 따라야 할 원문 파일. 과제 안내문, 채용 공고 같은 것")
+    rv.add_argument("--class", dest="cls")
+    rv.add_argument("--kind")
+    rv.add_argument("--audience")
+    rv.add_argument("--set", action="append", metavar="축=값")
+    rv.add_argument("--chars", type=int)
+    rv.add_argument("-o", "--output")
+    le = add("learn")
+    le.add_argument("files", nargs="*", help="샘플 파일. md, txt 와 docx, pptx, hwpx, odt, odp, html, pdf 를 읽는다. - 이면 표준 입력")
+    le.add_argument("--guide", action="store_true", help="내 문체 문서를 쓰는 지침을 낸다")
+    le.add_argument("--human", action="store_true", help="넘긴 글을 모두 사용자가 직접 쓴 글로 본다. 사용자가 그렇다고 했을 때만 붙인다")
+    le.add_argument("--json", action="store_true")
+    vo = add("voice", parents=[slot])
+    vo.add_argument("action", nargs="?", choices=("show", "set", "clear"), default="show")
+    vo.add_argument("file", nargs="?", help="set 할 문서. - 이면 표준 입력")
+    vo.add_argument("--samples", nargs="+", metavar="샘플", help="learn 에 넘긴 샘플. 문서가 샘플의 문구와 수치를 옮겼는지 재고, 옮겼으면 저장하지 않는다")
+    vo.add_argument("--keep", action="store_true", help="샘플과 겹친 표현이 버릇 자체를 가리키는 말이라 사용자가 남기자고 했을 때만 붙인다")
+    ca = add("card", parents=[slot])
+    ca.add_argument("--json", action="store_true")
+    ca.add_argument("--color", choices=("auto", "always", "never"), default="auto",
+                    help="auto 는 터미널일 때만 도트 그림을 그린다")
+    lo = add("look", parents=[slot])
+    lo.add_argument("part", nargs="?", help="hair, color, prop, top")
+    lo.add_argument("value", nargs="?", help="고를 값. prop 과 color 는 none 으로 지운다")
+    lo.add_argument("--json", action="store_true")
+    ps = add("preset", parents=[slot])
+    ps.add_argument("action", choices=("list", "show", "use", "export"))
+    ps.add_argument("name", nargs="?")
+    ps.add_argument("--class", dest="cls", help="list 에서 이 클래스의 조합을 앞에 둔다")
+    ps.add_argument("--here", action="store_true", help="use 를 지금 폴더의 .docs-suit.yaml 에 쓴다")
+    ps.add_argument("--by", help="export 에 남길 GitHub 아이디")
+    ps.add_argument("--label", help="export 에 남길 조합 이름")
+    ps.add_argument("--desc", help="export 에 남길 한 줄 소개")
+    ps.add_argument("-o", "--output", help="export 로 쓸 파일. 주지 않으면 <이름>.yaml")
+    pm = add("promote", parents=[slot])
+    pm.add_argument("key", nargs="?", help="기여하고 받은 승급 키. 주지 않으면 받은 키를 보인다")
+    g = add("growth", parents=[slot])
+    g.add_argument("action", choices=("on", "off", "log"), help="log 는 문서마다 받은 경험치를 최근 것부터 보인다")
+    g.add_argument("--limit", type=int, default=10, help="log 에서 보일 문서 수. 0 이면 모두")
+    g.add_argument("--json", action="store_true")
+    wd = add("widget")
+    wd.add_argument("--cwd", help="이 폴더의 슬롯을 그린다. 주지 않으면 지금 폴더")
+    wd.add_argument("--split", action="store_true", help="herdr 나 tmux 의 지금 칸 오른쪽에 칸을 나눠 띄운다")
+    wd.add_argument("--width", type=int, default=44, help="나눌 칸의 너비")
+    wd.add_argument("--auto", action="store_true", help="Codex 훅이 부를 때. 출력하지 않고 폴더 파일이 있는 곳에서만 띄운다")
+    wd.add_argument("--close", action="store_true", help="이 칸 옆에 띄운 캐릭터 창을 닫는다")
+    wd.add_argument("--follow-pid", type=int, help="이 프로세스가 끝나면 창도 끝내고 칸을 닫는다")
+    wd.add_argument("--once", action="store_true", help="한 번만 그리고 끝낸다")
+    sv = add("serve")
+    sv.add_argument("--port", type=int, help="주지 않으면 8790, 쓰고 있으면 빈 포트")
+    sv.add_argument("--cwd", help="이 폴더 기준으로 슬롯을 고른다. 주지 않으면 지금 폴더")
+    sv.add_argument("--page", choices=DASH_TABS + tuple(DASH_ALIAS), help="대시보드에서 처음 열 탭. character 는 캐릭터, "
+                    "setup 은 캐릭터 설정, theme 는 테마 설정. 주지 않으면 이 폴더에 캐릭터가 있을 때 character, 없으면 setup")
+    sv.add_argument("--detach", action="store_true", help="뒤에서 띄우고 바로 돌아온다. 에이전트가 쓸 때 붙인다")
+    sv.add_argument("--no-open", action="store_true", help="브라우저를 열지 않는다")
+    sv.add_argument("--kind", help="지금 쓰는 문서 종류. 테마 설정 탭이 이 종류로 열린다")
+    sv.add_argument("--audience", help="지금 문서의 독자. 쉼표로 잇는다")
+    sv.add_argument("--set", action="append", metavar="축=값", help="지금 문서에 대화로 정한 값")
+    pk = add("picked")
+    pk.add_argument("--json", action="store_true")
+    pk.add_argument("--clear", action="store_true", help="읽은 뒤 지운다")
+    st = add("status", parents=[slot])
+    st.add_argument("--size", choices=("line", "face", "full"), default="line", help="line 은 클래스 이모지와 한 줄, face 는 얼굴, full 은 온몸")
+    st.add_argument("--cwd", help="이 폴더 기준으로 슬롯을 고른다. 주지 않으면 표준 입력의 JSON 이나 지금 폴더")
+    add("bundle")
+    add("selftest")
+    ini = add("init", parents=[slot])
+    ini.add_argument("--agent", help="깔 도구를 프로필 대신 이것으로 고른다. claude, codex, antigravity, cursor, grok, all")
+    ini.add_argument("--new", action="store_true", help="쓰던 캐릭터가 있어도 bootstrap 대화로 새 캐릭터를 만든다")
+    ini.add_argument("--dry-run", action="store_true")
+    rm = add("remove")
+    rm.add_argument("--agent", help="이 도구의 스킬만 거둔다. 주지 않으면 모두 거둔다")
+    rm.add_argument("--dry-run", action="store_true")
+    up = add("update")
+    up.add_argument("--no-pull", action="store_true", help="저장소를 받지 않고 이 폴더의 스킬만 다시 깐다")
+    ln = add("link")
+    ln.add_argument("--dir", help="링크를 둘 폴더. 주지 않으면 ~/.local/bin")
+    ln.add_argument("--remove", action="store_true", help="걸어 둔 링크를 거둔다")
+    ln.add_argument("--force", action="store_true", help="그 자리에 다른 docs-suit 링크가 있어도 바꿔 건다")
+    return ap
+
+
 def main(argv=None):
     # 본문과 안내가 한글이라 표준 입출력을 utf-8 로 맞춘다. 로캘이 C 이거나 cp949 인 셸에서 에이전트가 불러도 깨지지 않게 한다
     for stream in (sys.stdin, sys.stdout, sys.stderr):
@@ -5051,145 +5441,19 @@ def main(argv=None):
                 f.write(json.dumps({"argv": sys.argv[1:] if argv is None else argv}, ensure_ascii=False) + "\n")
         except OSError:
             pass
-    ap = argparse.ArgumentParser(prog="suit.py", description="docs-suit: 문서에 옷을 입히는 AI 글쓰기 테마 엔진")
-    ap.add_argument("--version", action="version", version=f"docs-suit {VERSION}")
-    sub = ap.add_subparsers(dest="cmd", required=True)
-    slot = argparse.ArgumentParser(add_help=False)
-    slot.add_argument("--profile", metavar="슬롯", help="이 슬롯의 프로필을 쓴다. 폴더 파일과 profile use 보다 앞선다")
-    b = sub.add_parser("bootstrap", parents=[slot])
-    b.add_argument("--class", dest="cls")
-    for k in PERSONA_IN_PROMPT:
-        b.add_argument(f"--{k}")
-    b.add_argument("--docs", help="자주 쓰는 문서 종류. 쉼표로 잇는다")
-    b.add_argument("--agents", help="스킬을 설치할 도구. 쉼표로 잇는다")
-    b.add_argument("--hair", help="처음 머리 모양. bootstrap --questions 의 hairs 에서 고른다")
-    b.add_argument("--preset", help="이 테마 조합으로 시작한다. suit.py preset list 로 본다")
-    b.add_argument("--yes", action="store_true", help="묻지 않고 진행한다")
-    b.add_argument("--here", action="store_true", help="지금 폴더의 .docs-suit.yaml 이 --profile 로 준 슬롯을 쓰게 한다")
-    b.add_argument("--force", action="store_true", help="있는 프로필을 .bak 으로 남기고 새로 만든다")
-    b.add_argument("--questions", action="store_true", help="클래스와 페르소나 질문 목록을 JSON 으로 낸다")
-    pr = sub.add_parser("profile", parents=[slot])
-    pr.add_argument("action", nargs="?", choices=("show", "list", "use"), default="show")
-    pr.add_argument("name", nargs="?", help="profile use 로 고를 슬롯 이름")
-    pr.add_argument("--here", action="store_true", help="지금 폴더의 .docs-suit.yaml 에 슬롯을 적는다")
-    li = sub.add_parser("list")
-    li.add_argument("--classes", action="store_true")
-    li.add_argument("--json", action="store_true")
-    for name in ("get", "compose"):
-        p = sub.add_parser(name, parents=[slot])
-        p.add_argument("--class", dest="cls")
-        p.add_argument("--kind")
-        p.add_argument("--audience")
-        p.add_argument("--set", action="append", metavar="축=값")
-        if name == "get":
-            p.add_argument("--json", action="store_true")
-        else:
-            p.add_argument("--chars", type=int)
-            p.add_argument("--format", choices=("prompt", "output-style"), default="prompt")
-            p.add_argument("--html", action="store_true", help="--set markup=html 과 같다. 문서 디자인 규칙도 실린다")
-            p.add_argument("--revise", action="store_true", help="사용자가 준 원문을 다듬을 때. 다듬기 절을 싣는다")
-            p.add_argument("-o", "--output")
-    s = sub.add_parser("set", parents=[slot])
-    s.add_argument("axis")
-    s.add_argument("value", nargs="?")
-    s.add_argument("--unset", action="store_true")
-    s.add_argument("--audience", help="이 독자에게 쓰는 글에만 쓴다")
-    s.add_argument("--kind", help="이 문서 종류에만 쓴다. 문서 종류가 권하는 값을 이긴다")
-    s.add_argument("--here", action="store_true", help="슬롯 대신 지금 폴더의 .docs-suit.yaml 에 쓴다")
-    w = sub.add_parser("word", help="지금 폴더의 용어집에 틀린 말과 바른 말을 남긴다. 인자 없이 부르면 용어집을 보인다")
-    w.add_argument("wrong", nargs="?")
-    w.add_argument("right", nargs="?")
-    w.add_argument("--unset", action="store_true")
-    e = sub.add_parser("export", parents=[slot])
-    e.add_argument("--agent", help="claude, agents, codex, antigravity, cursor, grok, web, all. 스킬은 지금 폴더에 깐다")
-    e.add_argument("--remove", action="store_true", help="지금 폴더에 깐 스킬을 거둔다. --agent 를 빼면 모두 거둔다")
-    e.add_argument("--global", dest="glob", action="store_true", help="--remove 와 함께 예전 판이 홈 폴더에 깐 스킬을 거둔다")
-    e.add_argument("--dest", help="에이전트별 하위 폴더로 이 폴더 아래에 쓴다. 시험용")
-    e.add_argument("--dry-run", action="store_true")
-    c = sub.add_parser("check", parents=[slot])
-    c.add_argument("file", help="검사할 본문 파일. md, txt 와 docx, pptx, hwpx, odt, odp, html, pdf 를 읽는다. - 이면 표준 입력에서 읽는다")
-    c.add_argument("--class", dest="cls")
-    c.add_argument("--kind")
-    c.add_argument("--audience")
-    c.add_argument("--set", action="append", metavar="축=값")
-    c.add_argument("--chars", type=int)
-    c.add_argument("--revise", action="store_true", help="compose 와 같은 인자를 그대로 붙일 수 있게 받는다. 재는 것은 같다")
-    c.add_argument("--no-record", action="store_true", help="재기만 하고 성장 기록에 남기지 않는다")
-    c.add_argument("--json", action="store_true")
-    rv = sub.add_parser("review", parents=[slot])
-    rv.add_argument("file", nargs="?", help="검토할 본문 파일. - 이면 표준 입력에서 읽고, 주지 않으면 빈자리로 둔다")
-    rv.add_argument("--source", help="글이 따라야 할 원문 파일. 과제 안내문, 채용 공고 같은 것")
-    rv.add_argument("--class", dest="cls")
-    rv.add_argument("--kind")
-    rv.add_argument("--audience")
-    rv.add_argument("--set", action="append", metavar="축=값")
-    rv.add_argument("--chars", type=int)
-    rv.add_argument("-o", "--output")
-    le = sub.add_parser("learn", help="예전에 쓴 글을 재서 축 값을 제안한다. 원문은 남기지 않는다")
-    le.add_argument("files", nargs="*", help="샘플 파일. md, txt 와 docx, pptx, hwpx, odt, odp, html, pdf 를 읽는다. - 이면 표준 입력")
-    le.add_argument("--guide", action="store_true", help="내 문체 문서를 쓰는 지침을 낸다")
-    le.add_argument("--human", action="store_true", help="넘긴 글을 모두 사용자가 직접 쓴 글로 본다. 사용자가 그렇다고 했을 때만 붙인다")
-    le.add_argument("--json", action="store_true")
-    vo = sub.add_parser("voice", parents=[slot], help="슬롯의 내 문체 문서를 보거나 남기거나 지운다")
-    vo.add_argument("action", nargs="?", choices=("show", "set", "clear"), default="show")
-    vo.add_argument("file", nargs="?", help="set 할 문서. - 이면 표준 입력")
-    vo.add_argument("--samples", nargs="+", metavar="샘플", help="learn 에 넘긴 샘플. 문서가 샘플의 문구와 수치를 옮겼는지 재고, 옮겼으면 저장하지 않는다")
-    vo.add_argument("--keep", action="store_true", help="샘플과 겹친 표현이 버릇 자체를 가리키는 말이라 사용자가 남기자고 했을 때만 붙인다")
-    ca = sub.add_parser("card", parents=[slot])
-    ca.add_argument("--json", action="store_true")
-    ca.add_argument("--color", choices=("auto", "always", "never"), default="auto",
-                    help="auto 는 터미널일 때만 도트 그림을 그린다")
-    lo = sub.add_parser("look", parents=[slot])
-    lo.add_argument("part", nargs="?", help="hair, color, prop, top")
-    lo.add_argument("value", nargs="?", help="고를 값. prop 과 color 는 none 으로 지운다")
-    lo.add_argument("--json", action="store_true")
-    ps = sub.add_parser("preset", parents=[slot])
-    ps.add_argument("action", choices=("list", "show", "use", "export"))
-    ps.add_argument("name", nargs="?")
-    ps.add_argument("--class", dest="cls", help="list 에서 이 클래스의 조합을 앞에 둔다")
-    ps.add_argument("--here", action="store_true", help="use 를 지금 폴더의 .docs-suit.yaml 에 쓴다")
-    ps.add_argument("--by", help="export 에 남길 GitHub 아이디")
-    ps.add_argument("--label", help="export 에 남길 조합 이름")
-    ps.add_argument("--desc", help="export 에 남길 한 줄 소개")
-    ps.add_argument("-o", "--output", help="export 로 쓸 파일. 주지 않으면 <이름>.yaml")
-    pm = sub.add_parser("promote", parents=[slot])
-    pm.add_argument("key", nargs="?", help="기여하고 받은 승급 키. 주지 않으면 받은 키를 보인다")
-    g = sub.add_parser("growth", parents=[slot])
-    g.add_argument("action", choices=("on", "off", "log"), help="log 는 문서마다 받은 경험치를 최근 것부터 보인다")
-    g.add_argument("--limit", type=int, default=10, help="log 에서 보일 문서 수. 0 이면 모두")
-    g.add_argument("--json", action="store_true")
-    wd = sub.add_parser("widget")
-    wd.add_argument("--cwd", help="이 폴더의 슬롯을 그린다. 주지 않으면 지금 폴더")
-    wd.add_argument("--split", action="store_true", help="herdr 나 tmux 의 지금 칸 오른쪽에 칸을 나눠 띄운다")
-    wd.add_argument("--width", type=int, default=44, help="나눌 칸의 너비")
-    wd.add_argument("--auto", action="store_true", help="Codex 훅이 부를 때. 출력하지 않고 폴더 파일이 있는 곳에서만 띄운다")
-    wd.add_argument("--close", action="store_true", help="이 칸 옆에 띄운 캐릭터 창을 닫는다")
-    wd.add_argument("--follow-pid", type=int, help="이 프로세스가 끝나면 창도 끝내고 칸을 닫는다")
-    wd.add_argument("--once", action="store_true", help="한 번만 그리고 끝낸다")
-    sv = sub.add_parser("serve")
-    sv.add_argument("--port", type=int, help="주지 않으면 8790, 쓰고 있으면 빈 포트")
-    sv.add_argument("--cwd", help="이 폴더 기준으로 슬롯을 고른다. 주지 않으면 지금 폴더")
-    sv.add_argument("--page", choices=DASH_TABS + tuple(DASH_ALIAS), help="대시보드에서 처음 열 탭. character 는 캐릭터, "
-                    "setup 은 캐릭터 설정, theme 는 테마 설정. 주지 않으면 이 폴더에 캐릭터가 있을 때 character, 없으면 setup")
-    sv.add_argument("--detach", action="store_true", help="뒤에서 띄우고 바로 돌아온다. 에이전트가 쓸 때 붙인다")
-    sv.add_argument("--no-open", action="store_true", help="브라우저를 열지 않는다")
-    sv.add_argument("--kind", help="지금 쓰는 문서 종류. 테마 설정 탭이 이 종류로 열린다")
-    sv.add_argument("--audience", help="지금 문서의 독자. 쉼표로 잇는다")
-    sv.add_argument("--set", action="append", metavar="축=값", help="지금 문서에 대화로 정한 값")
-    pk = sub.add_parser("picked")
-    pk.add_argument("--json", action="store_true")
-    pk.add_argument("--clear", action="store_true", help="읽은 뒤 지운다")
-    st = sub.add_parser("status", parents=[slot])
-    st.add_argument("--size", choices=("line", "face", "full"), default="line", help="line 은 클래스 이모지와 한 줄, face 는 얼굴, full 은 온몸")
-    st.add_argument("--cwd", help="이 폴더 기준으로 슬롯을 고른다. 주지 않으면 표준 입력의 JSON 이나 지금 폴더")
-    sub.add_parser("bundle")
-    sub.add_parser("selftest")
+    ap = build_parser(cli_name())
     a = ap.parse_args(argv)
+    if not a.cmd:  # 인자 없이 부르면 오류 대신 도움말과 시작할 명령을 보인다
+        ap.print_help()
+        hint = cli_start_hint()
+        if hint:
+            print("\n" + hint)
+        return 0
     try:
         th = Themes(themes_root())
         if a.cmd == "selftest":
             return selftest(th)
-        return {"bootstrap": cmd_bootstrap, "profile": cmd_profile, "list": cmd_list, "get": cmd_get,
+        return {"init": cmd_init, "remove": cmd_remove, "update": cmd_update, "link": cmd_link, "bootstrap": cmd_bootstrap, "profile": cmd_profile, "list": cmd_list, "get": cmd_get,
                 "compose": cmd_compose, "set": cmd_set, "word": cmd_word, "export": cmd_export, "check": cmd_check, "review": cmd_review,
                 "card": cmd_card, "learn": cmd_learn, "voice": cmd_voice,
                 "look": cmd_look, "preset": cmd_preset, "promote": cmd_promote, "growth": cmd_growth, "status": cmd_status, "widget": cmd_widget, "serve": cmd_serve, "picked": cmd_picked,

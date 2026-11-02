@@ -148,15 +148,27 @@ docs-suit 는 쓰기 전에 문서 종류와 읽는 사람, 말투에 맞춰 규
 
 ```sh
 git clone https://github.com/dodokim-lab/docs-suit.git ~/docs-suit
+python3 ~/docs-suit/suit.py link     # 어느 폴더에서나 docs-suit 로 부르게 한다
 cd <글을 쓰는 폴더>
-python3 ~/docs-suit/suit.py bootstrap
+docs-suit init
 ```
 
-`bootstrap` 이 클래스와 쓰는 AI 도구, 캐릭터의 머리 모양을 묻고 지금 폴더에 스킬을 깝니다. 끝나면 이 폴더에서 그 도구를 새로 열고 "업무 보고 써 줘" 처럼 평소대로 부탁하면 됩니다. 스킬이 규칙을 조립해 따르고, 다 쓴 글을 재서 캐릭터를 키웁니다.
+`link` 는 `~/.local/bin/docs-suit` 에 링크를 겁니다. 그 폴더가 PATH 에 없으면 셸 설정에 더할 줄을 알려 주니, 한 줄 더하고 터미널을 새로 엽니다. 링크 없이 `python3 ~/docs-suit/suit.py init` 으로 불러도 똑같이 됩니다.
 
-스킬은 깐 폴더에서만 불려서 다른 프로젝트의 글에는 끼어들지 않습니다. 다른 폴더에서도 쓰려면 그 폴더에서 `python3 ~/docs-suit/suit.py export --agent claude` 처럼 한 번 더 깝니다. 깐 스킬은 받은 폴더의 `suit.py` 를 부르니, 받은 폴더는 옮기거나 지우지 마세요.
+`init` 은 처음이면 클래스와 쓰는 AI 도구, 캐릭터의 머리 모양을 묻고 지금 폴더에 스킬을 깝니다. 끝나면 이 폴더에서 그 도구를 새로 열고 "업무 보고 써 줘" 처럼 평소대로 부탁하면 됩니다. 스킬이 규칙을 조립해 따르고, 다 쓴 글을 재서 캐릭터를 키웁니다.
 
-새 판은 `git -C ~/docs-suit pull` 로 받고, 스킬을 깐 폴더마다 `export` 를 다시 돌려야 스킬까지 새 판이 됩니다.
+스킬은 깐 폴더에서만 불려서 다른 프로젝트의 글에는 끼어들지 않습니다. 다른 폴더에서도 쓰려면 그 폴더에서 `docs-suit init` 을 한 번 더 부릅니다. 다른 폴더에서 만든 캐릭터를 이어서 키울 수도 있습니다. 깐 스킬은 받은 폴더의 `suit.py` 를 부르니, 받은 폴더는 옮기거나 지우지 마세요.
+
+| 명령 | 하는 일 |
+|---|---|
+| `docs-suit init` | 지금 폴더에 스킬을 깝니다. 캐릭터가 없으면 만들고, `--new` 를 붙이면 새로 만듭니다 |
+| `docs-suit update` | 새 판을 받고 지금 폴더의 스킬을 다시 깝니다 |
+| `docs-suit remove` | 지금 폴더에 깐 스킬을 거둡니다 |
+| `docs-suit card` | 캐릭터를 봅니다 |
+| `docs-suit serve` | 캐릭터와 테마 설정 화면을 브라우저에 띄웁니다 |
+| `docs-suit` | 명령을 묶음별로 보이고, 지금 폴더에서 할 일을 알려 줍니다 |
+
+새 판은 `docs-suit update` 로 받습니다. 저장소를 받은 뒤 지금 폴더의 스킬까지 다시 깔고, 스킬을 깐 다른 폴더에서는 `docs-suit update --no-pull` 로 스킬만 다시 깝니다.
 
 ## 쓰는 법
 
