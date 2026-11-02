@@ -1329,6 +1329,72 @@ def suggest_doc(th, doc, vals, kind=None):
     return out
 
 
+def tell_hits(th, doc, kind=None):
+    """{패턴 이름: 걸린 횟수}. tells_found 와 달리 min 과 문단 단위를 따지지 않고 문서 전체에서 센다. 밀도를 잴 때 쓴다.
+    공개 범위에 따라 재는 패턴은 AI 버릇이 아니라 빼고 센다."""
+    clean = plain_text(doc)
+    out = {}
+    for name, t in th.tells.items():
+        if t.get("exposure") or (kind and kind in (t.get("skip") or [])):
+            continue
+        text = doc if str(t.get("raw")) == "true" else clean
+        out[name] = sum(1 for _ in re.finditer(t["re"], text, re.M))
+    return out
+
+
+def measure(doc, th=None, kind=None):
+    """글 한 편의 수치를 {이름: 값} 으로 낸다. 평가 실행기(tests/eval)가 사람 글, 끈 글, 켠 글을 견줄 때 쓰고,
+    check 의 판정에는 아직 쓰지 않는다. 잴 거리가 모자라면 그 값은 None 이다. th 를 주면 문장 규칙의 밀도도 잰다."""
+    r = lambda x, n=3: None if x is None else round(x, n)
+    per_k = lambda n, size: r(n * 1000 / size) if size else None
+    lines = body_lines(doc)
+    size = len("\n".join(lines))
+    allx = [ln.strip() for ln in plain_text(doc).splitlines() if ln.strip() and not ln.strip().startswith("```")]
+    total = sum(map(len, allx))
+    share = lambda pick: r(sum(len(ln) for ln in allx if pick(ln)) / total) if total else None
+    heads = sum(1 for ln in allx if ln.startswith("#"))
+    flat = [s for row in sentences(doc) for s in row]
+    lens = sorted(len(s) for s in flat)
+    n = len(lens)
+    mean = sum(lens) / n if n else None
+    sd = (sum((x - mean) ** 2 for x in lens) / n) ** 0.5 if n else None
+    # 문단은 빈 줄로 나뉜 덩어리다. 문장 수와 길이는 목록이 아닌 줄글 줄로만 센다
+    blocks = [b for b in re.split(r"\n\s*\n", plain_text(doc)) if b.strip()]
+    paras = [k for k in (sum(len(row) for row in sentences(b)) for b in blocks) if k]
+    prose = [x for x in (sum(len(ln) for ln in body_lines(b) if not re.match(LIST_MARK, ln)) for b in blocks) if x]
+    ratio = lambda k: r(k / n) if n else None
+    out = {
+        "chars": size,
+        "lines_per_1k": per_k(len(lines), size),
+        "blocks_per_1k": per_k(len(blocks), size),
+        "sentences": n,
+        "sent_mean": r(mean, 1),
+        "sent_median": r((lens[(n - 1) // 2] + lens[n // 2]) / 2, 1) if n else None,
+        "sent_cv": r(sd / mean) if n and mean else None,
+        "sent_over80": ratio(sum(1 for x in lens if x > 80)),
+        "sent_under20": ratio(sum(1 for x in lens if x <= 20)),
+        "paras": len(paras),
+        "para_sents": r(sum(paras) / len(paras), 2) if paras else None,
+        "para_chars": r(sum(prose) / len(prose), 1) if prose else None,
+        "one_sent_paras": r(sum(1 for k in paras if k == 1) / len(paras)) if paras else None,
+        "list_share": share(lambda ln: re.match(LIST_MARK, ln)),
+        "table_share": share(lambda ln: ln.startswith("|")),
+        "heading_share": share(lambda ln: ln.startswith("#")),
+        "chars_per_heading": r(size / heads, 1) if heads else None,
+        "comma_per_sent": ratio(sum(s.count(",") for s in flat)),
+        "comma_sents": ratio(sum(1 for s in flat if "," in s)),
+        "connective_comma": ratio(sum(1 for s in flat if CONNECTIVE_COMMA.search(s))),
+    }
+    if th is not None:
+        hits = tell_hits(th, doc, kind)
+        ai = sum(k for name, k in hits.items()
+                 if str(th.tells[name].get("ai")) != "false" and name not in ("secret", "placeholder"))
+        out["ai_tells_per_1k"] = per_k(ai, size)
+        out["spelling"] = hits.get("spelling", 0)
+        out["spacing"] = hits.get("spacing", 0)
+    return out
+
+
 def words_found(doc, words):
     """[(틀린 말, 횟수, 바른 말)]. 따옴표와 코드 안은 걷고 센다. 바른 말 안에 틀린 말이 든 경우는 바른 말을 먼저 걷는다."""
     clean = plain_text(doc)
@@ -4527,6 +4593,13 @@ def selftest(th):
               and "## 공개 범위 · 팀 내부" in text, "종류 없는 글의 조립이 다르다")
         check(check_doc("- 첫째 줄\n- 둘째 줄\n- 셋째 줄\n- 넷째 줄입니다.\n", resolve(th, talk=True)[0], None, None, th)
               == [("tells", True, "걸린 것 없음")], "대화로 정한 축까지 본문 검사가 쟀다")
+        # 평가 수치. 제목과 목록은 문장으로 세지 않고, 빈 줄로 나뉜 줄글 덩어리가 문단이다
+        got = measure("# 제목\n\n첫 문장이다. 둘째 문장은 조금 더 길게 쓴다.\n\n- 목록 하나\n- 목록 둘\n\n"
+                      "쉼표가 있고, 끝난다. 다양한 방법을 쓴다.\n\n## 둘째 절\n\n한 문장 문단이다.\n", th)
+        check((got["sentences"], got["paras"], got["para_sents"], got["one_sent_paras"], got["comma_sents"],
+               got["connective_comma"], got["sent_median"], got["chars_per_heading"]) == (5, 3, 1.67, 0.333, 0.2, 0.2, 11.0, 38.5)
+              and got["ai_tells_per_1k"] > 0 and got["spelling"] == 0, f"평가 수치가 다르다: {got}")
+        check(measure("")["sent_mean"] is None and measure("")["paras"] == 0, "빈 글의 평가 수치가 None 이 아니다")
         text, _ = compose(th, kind="report", cls="student", chars=1000, fmt="output-style",
                           profile={"persona": {"call": "민수 님", "docs": ["report"]}})
         check(text.startswith("---\nname:") and "공백 포함 1000자" in text, "output-style 이나 글자수 조립이 다르다")
