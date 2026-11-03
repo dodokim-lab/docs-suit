@@ -941,12 +941,12 @@ def cmd_report(a):
 # 같은 요청으로 끄고, 켜고 쓴 글을 나란히 보이고 사람이 고른다. 어느 쪽이 켠 글인지는 key.json 에만 두고 화면에는 싣지 않는다
 JUDGE = DATA / "judge"
 # 물음은 둘 중 하나를 고르는 것(pick)과 글마다 그렇다, 아니다로 답하는 것(each)이 있다.
-# 짝 묶음은 사실을 다 준 긴 요청이라 글솜씨를 묻고, 케이스 묶음은 짧은 요청이라 지어낸 사실과 초안의 쓸모를 묻는다
+# 짝 묶음은 사실을 다 준 긴 요청이라 글솜씨를 묻고, 케이스 묶음은 짧은 요청이라 어느 초안으로 시작할지를 묻는다
 QUESTIONS = {
     "pairs": [["overall", "전체로 더 나은 글", "pick"], ["read", "더 읽기 쉬운 글", "pick"],
               ["structure", "구성(순서와 묶음, 제목)이 더 나은 글", "pick"], ["ai", "AI 가 쓴 것 같은 글", "pick"]],
-    "cases": [["made", "요청에 없는 사실을 지어낸 곳이 있다", "each"], ["send", "빈칸만 채우면 그대로 보낼 수 있다", "each"],
-              ["start", "둘 중 이 초안으로 시작하겠다", "pick"]],
+    # 지어낸 사실은 기계가 요청에 없던 숫자로 재므로 사람에게는 묻지 않는다
+    "cases": [["start", "둘 중 이 초안으로 시작하겠다", "pick"]],
 }
 
 
@@ -1234,10 +1234,15 @@ def judge_section():
         meta, key = judge_meta(folder), json.loads((folder / "key.json").read_text(encoding="utf-8"))
         items = {it["id"]: it for it in json.loads((folder / "items.json").read_text(encoding="utf-8"))}
         answers = {k: v for k, v in judge_answers(folder).items() if k in key}
-        if not answers:
-            continue
         other = {"A": "B", "B": "A"}
         on_letter = lambda j: "A" if key[j]["A"] == "on" else "B"
+        # 판정한 뒤 요청을 고쳐 다시 쓴 글의 쌍은 결과에서 뺀다. 같은 이름으로 다시 썼을 수 있어 판정 때 본 글과 견준다
+        same = lambda j, mode, letter: (DATA / key[j][mode]).exists() and strip_count((DATA / key[j][mode]).read_text(encoding="utf-8")) == strip_count(items[j][letter])
+        stale = [j for j in answers if not (same(j, "on", on_letter(j)) and same(j, "off", other[on_letter(j)]))]
+        dropped = sorted({key[j]["source"] for j in stale})
+        answers = {j: a for j, a in answers.items() if j not in stale}
+        if not answers:
+            continue
         side = lambda j, v: "tie" if v not in ("A", "B") else "on" if v == on_letter(j) else "off"
         picks = [q for q in meta["questions"] if q[2] == "pick"]
         eaches = [q for q in meta["questions"] if q[2] == "each"]
@@ -1282,8 +1287,12 @@ def judge_section():
         else:
             note = ("짧은 요청으로 끄고, 켜고 쓴 글을 A 와 B 에 무작위로 놓고, 요청을 함께 보이며 사람이 골랐다. "
                     "켠 글은 모두 모르는 사실을 `[확인 필요]` 로 비워 두어 판정자가 어느 쪽이 켠 글인지 알 수 있다. "
-                    f"{len(answers)}/{len(key)}쌍을 골랐다. 둘 중 고르는 물음의 p 는 비슷을 뺀 부호 시험이고, "
-                    "글마다 묻는 물음의 p 는 두 글의 답이 갈린 쌍만 센 부호 시험이다. 출처는 문서 종류다.")
+                    f"{len(answers)}/{len(key)}쌍을 골랐다. 둘 중 고르는 물음의 p 는 비슷을 뺀 부호 시험"
+                    + ("이고, 글마다 묻는 물음의 p 는 두 글의 답이 갈린 쌍만 센 부호 시험이다." if eaches else "이다.")
+                    + " 출처는 문서 종류다. 지어낸 사실은 사람에게 묻지 않고 케이스 묶음 절의 요청에 없던 숫자로 잰다.")
+        if stale:
+            note += (f" {', '.join(dropped)} 의 {len(stale)}쌍은 판정한 뒤 요청을 고쳐 글을 다시 써서 결과에서 뺐다."
+                     " 다시 쓴 글은 짝 묶음 절에서 수치로만 견준다.")
         out.append(f"### 사람 쌍대 비교 {folder.name}\n\n{note}\n\n" + "\n\n".join(parts) + "\n")
     return out
 
@@ -1321,7 +1330,7 @@ def main():
     j.add_argument("--port", type=int, default=0)
     j.add_argument("--redo", action="store_true")
     j.add_argument("--agent", default="claude", help="이 에이전트로 쓴 끈 글과 켠 글에서 뽑는다")
-    j.add_argument("--set", default="pairs", choices=("pairs", "cases"), help="짝 묶음은 글솜씨를, 케이스 묶음은 지어낸 사실과 초안의 쓸모를 묻는다")
+    j.add_argument("--set", default="pairs", choices=("pairs", "cases"), help="짝 묶음은 글솜씨를, 케이스 묶음은 어느 초안으로 시작할지를 묻는다")
     j.add_argument("--only", help="이 요청들에서만 뽑는다. 쉼표로 잇는다")
     a = ap.parse_args()
     {"gen": cmd_gen, "fetch": cmd_fetch, "pairs": cmd_pairs, "measure": cmd_measure, "report": cmd_report,
