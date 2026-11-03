@@ -80,6 +80,8 @@ python3 tests/eval/run.py fetch kdca-health # 건강 정보 안내문의 2022년
 python3 tests/eval/run.py pairs korea-press # 사람 글의 사실로 같은 문서를 써 달라는 요청을 만든다. 사용료가 든다
 python3 tests/eval/run.py gen --set pairs   # 짝 요청을 켜고 끄고 쓴다
 python3 tests/eval/run.py gen --set pairs --run <날짜>-repeat --only <id,…>  # 같은 요청을 한 번 더 써서 실행 사이 흔들림을 잰다
+python3 tests/eval/run.py judge make        # 짝 묶음에서 끈 글과 켠 글 30쌍을 뽑아 A 와 B 에 무작위로 놓는다
+python3 tests/eval/run.py judge serve       # 로컬 화면에서 한 쌍씩 골라 답을 남긴다. 보고서가 켠 글을 고른 비율을 낸다
 python3 tests/eval/run.py measure           # 모은 글을 모두 잰다
 python3 tests/eval/run.py report --record   # 보고서를 tests/eval/results/ 에 남긴다
 ```

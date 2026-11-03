@@ -851,6 +851,7 @@ def cmd_report(a):
     out.append("### 문체 배우기가 AI 글로 의심하는 비율\n\n`learn` 은 AI 표지가 두 가지 넘게 걸린 샘플을 AI 글로 의심해 제안에서 뺀다. "
                "사람 글 줄은 잘못 의심하는 비율이다.\n\n" + "\n".join(lines) + "\n")
     out += comma_section(rows)
+    out += judge_section()
     gec = DATA / "raw" / "gec" / "val.jsonl"
     if gec.exists():
         pairs = [json.loads(x) for x in gec.read_text(encoding="utf-8").splitlines()]
@@ -870,6 +871,279 @@ def cmd_report(a):
         dest.parent.mkdir(exist_ok=True)
         dest.write_text(text, encoding="utf-8")
         print(f"남김: {dest}", file=sys.stderr)
+
+
+# ---------------------------------------------------------------- 사람 쌍대 비교
+# 짝 묶음의 끈 글과 켠 글을 나란히 보이고 사람이 고른다. 어느 쪽이 켠 글인지는 key.json 에만 두고 화면에는 싣지 않는다
+JUDGE = DATA / "judge"
+QUESTIONS = (("overall", "전체로 더 나은 글"), ("read", "더 읽기 쉬운 글"), ("structure", "구성(순서와 묶음, 제목)이 더 나은 글"),
+             ("ai", "AI 가 쓴 것 같은 글"))
+
+
+def md_html(text):
+    """판정 화면에 쓰는 작은 마크다운 변환기. 제목과 문단, 목록, 표, 인용, 코드 블록, 굵은 글씨와 코드만 그린다. 링크는 글자만 남긴다."""
+    def inline(t):
+        t = html.escape(t)
+        t = re.sub(r"`([^`]+)`", r"<code>\1</code>", t)
+        t = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", t)
+        t = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"<u>\1</u>", t)
+        return t
+    out, para, lines, i = [], [], text.splitlines(), 0
+    flush = lambda: (out.append("<p>" + " ".join(inline(x.strip()) for x in para) + "</p>"), para.clear()) if para else None
+    while i < len(lines):
+        ln = lines[i]
+        if ln.strip().startswith("```"):
+            flush()
+            j = i + 1
+            while j < len(lines) and not lines[j].strip().startswith("```"):
+                j += 1
+            out.append("<pre><code>" + html.escape("\n".join(lines[i + 1:j])) + "</code></pre>")
+            i = j + 1
+            continue
+        m = re.match(r"(#{1,6})\s+(.*)", ln)
+        if m:
+            flush()
+            out.append(f"<h{len(m.group(1))}>{inline(m.group(2))}</h{len(m.group(1))}>")
+        elif ln.lstrip().startswith("|"):
+            flush()
+            rows = []
+            while i < len(lines) and lines[i].lstrip().startswith("|"):
+                cells = [c.strip() for c in lines[i].strip().strip("|").split("|")]
+                if not all(re.fullmatch(r":?-{2,}:?", c) for c in cells if c):
+                    rows.append(cells)
+                i += 1
+            out.append("<table>" + "".join("<tr>" + "".join(f"<{'th' if k == 0 else 'td'}>{inline(c)}</{'th' if k == 0 else 'td'}>"
+                                                             for c in r) + "</tr>" for k, r in enumerate(rows)) + "</table>")
+            continue
+        elif re.match(r"\s*([-*+]|\d+[.)])\s+", ln):
+            flush()
+            stack = []
+            while i < len(lines) and (re.match(r"\s*([-*+]|\d+[.)])\s+", lines[i]) or (lines[i].startswith("  ") and lines[i].strip() and stack)):
+                m = re.match(r"(\s*)([-*+]|\d+[.)])\s+(.*)", lines[i])
+                if not m:  # 목록 항목의 이어진 줄
+                    out[-1] = out[-1][:-5] + " " + inline(lines[i].strip()) + "</li>"
+                    i += 1
+                    continue
+                depth, tag = len(m.group(1).expandtabs(4)), "ol" if m.group(2)[0].isdigit() else "ul"
+                while stack and depth < stack[-1][0]:
+                    out.append(f"</{stack.pop()[1]}>")
+                if not stack or depth > stack[-1][0]:
+                    stack.append((depth, tag))
+                    out.append(f"<{tag}>")
+                out.append(f"<li>{inline(m.group(3))}</li>")
+                i += 1
+            while stack:
+                out.append(f"</{stack.pop()[1]}>")
+            continue
+        elif ln.startswith(">"):
+            flush()
+            out.append(f"<blockquote>{inline(ln.lstrip('> '))}</blockquote>")
+        elif re.fullmatch(r"\s*(-{3,}|\*{3,})\s*", ln):
+            flush()
+            out.append("<hr>")
+        elif not ln.strip():
+            flush()
+        else:
+            para.append(ln)
+        i += 1
+    flush()
+    return "\n".join(out)
+
+
+def judge_pairs():
+    """짝 묶음마다 끈 글은 처음 쓴 판, 켠 글은 가장 나중 판을 쓴다. 보고서의 짝 묶음 절과 같은 글이다. 다시 쓴 판은 뺀다."""
+    asks = {r["id"]: r for r in map(json.loads, (DATA / "pairs.jsonl").read_text(encoding="utf-8").splitlines())}
+    runs = sorted(d.name for d in (DATA / "gen").iterdir() if d.is_dir() and "repeat" not in d.name)
+    found = {}
+    for run in runs:
+        for mode in ("off", "on"):
+            for f in sorted((DATA / "gen" / run / mode).glob("*.md")):
+                meta = f.with_suffix(".json")
+                if f.stem in asks and meta.exists() and json.loads(meta.read_text(encoding="utf-8")).get("set") == "pairs":
+                    slot = found.setdefault(f.stem, {})
+                    if mode == "on" or mode not in slot:  # 켠 글은 나중 판이 덮고, 끈 글은 처음 판을 둔다
+                        slot[mode] = f
+    return [(pid, asks[pid], v["off"], v["on"]) for pid, v in sorted(found.items())
+            if "off" in v and "on" in v and v["off"].read_text(encoding="utf-8").strip() and v["on"].read_text(encoding="utf-8").strip()]
+
+
+def cmd_judge(a):
+    folder = JUDGE / a.name
+    if a.action == "make":
+        if (folder / "key.json").exists() and not a.redo:
+            sys.exit(f"{folder} 에 이미 만든 판정 묶음이 있다. 다시 만들려면 --redo")
+        rng = random.Random(a.seed)
+        by_source = {}
+        for item in judge_pairs():
+            by_source.setdefault(item[1]["pair"]["source"], []).append(item)
+        for v in by_source.values():
+            rng.shuffle(v)
+        picked, k = [], 0
+        while len(picked) < a.n and any(by_source.values()):  # 출처를 돌아가며 한 쌍씩 뽑는다
+            src = sorted(by_source)[k % len(by_source)]
+            if by_source[src]:
+                picked.append(by_source[src].pop())
+            k += 1
+        rng.shuffle(picked)
+        items, key = [], {}
+        for n, (pid, ask, off, on) in enumerate(picked, 1):
+            jid = f"j{n:02d}"
+            on_is_a = rng.random() < 0.5
+            items.append({"id": jid, "kind": th.kinds.get(ask.get("kind"), {}).get("label", ""), "ask": ask["ask"],
+                          "A": (on if on_is_a else off).read_text(encoding="utf-8"), "B": (off if on_is_a else on).read_text(encoding="utf-8")})
+            key[jid] = {"pair": pid, "source": ask["pair"]["source"], "A": "on" if on_is_a else "off",
+                        "on": str(on.relative_to(DATA)), "off": str(off.relative_to(DATA))}
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "items.json").write_text(json.dumps(items, ensure_ascii=False), encoding="utf-8")
+        (folder / "key.json").write_text(json.dumps(key, ensure_ascii=False, indent=1), encoding="utf-8")
+        print(f"판정 묶음 {len(items)}쌍: {folder}. 출처별 " + ", ".join(f"{s} {c}" for s, c in Counter(v['source'] for v in key.values()).most_common()))
+        return
+    items = json.loads((folder / "items.json").read_text(encoding="utf-8"))
+    serve_judge(folder, items, a.port)
+
+
+def judge_answers(folder):
+    """답은 한 줄씩 덧붙여 남기고, 같은 쌍을 다시 고르면 나중 답을 쓴다."""
+    f = folder / "answers.jsonl"
+    got = {}
+    for line in f.read_text(encoding="utf-8").splitlines() if f.exists() else []:
+        r = json.loads(line)
+        got[r["id"]] = r
+    return got
+
+
+JUDGE_CSS = """
+:root{--bg:#fbfaf7;--fg:#1f2328;--muted:#646a73;--line:#d9d6cf;--card:#fff;--accent:#2f6f5e;--pick:#e6f2ee}
+@media (prefers-color-scheme:dark){:root{--bg:#16181b;--fg:#e6e6e3;--muted:#9aa0a6;--line:#33373c;--card:#1d2024;--accent:#7cc4ad;--pick:#1f3530}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 -apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
+header{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;gap:12px;align-items:center;z-index:1}
+header b{font-size:15px}header .bar{flex:1;height:6px;background:var(--line);border-radius:3px;overflow:hidden}header .bar i{display:block;height:100%;background:var(--accent)}
+nav a{color:var(--muted);text-decoration:none;margin-left:8px;font-size:14px}main{max-width:1280px;margin:0 auto;padding:16px}
+details{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 14px;margin-bottom:14px}summary{cursor:pointer;color:var(--muted);font-size:14px}
+details pre{white-space:pre-wrap;font:inherit;font-size:14px;margin:8px 0 0}
+.docs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}@media (max-width:820px){.docs{grid-template-columns:1fr}}
+article{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 18px 14px;overflow-wrap:anywhere}
+article>.tag{display:inline-block;margin-top:10px;font-weight:700;color:var(--accent)}
+article h1{font-size:1.3em}article h2{font-size:1.15em}article h3,article h4{font-size:1.02em}
+table{border-collapse:collapse;display:block;overflow-x:auto;font-size:14px}td,th{border:1px solid var(--line);padding:4px 8px;vertical-align:top}
+pre{overflow-x:auto;background:var(--bg);padding:8px;border-radius:6px;font-size:13px}code{font-size:.92em}blockquote{margin:0;padding-left:12px;border-left:3px solid var(--line);color:var(--muted)}
+form{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 16px;margin-top:14px}
+.q{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)}.q span{flex:1 1 220px}
+.q label{border:1px solid var(--line);border-radius:6px;padding:4px 14px;cursor:pointer}.q input{position:absolute;opacity:0}
+.q label:has(input:checked){background:var(--pick);border-color:var(--accent);font-weight:700}
+textarea{width:100%;min-height:56px;margin-top:10px;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:8px;font:inherit}
+button{margin-top:10px;background:var(--accent);color:var(--card);border:0;border-radius:6px;padding:8px 20px;font:inherit;font-weight:700;cursor:pointer}
+.done{max-width:640px;margin:40px auto;text-align:center}
+"""
+
+
+def judge_page(items, answers, i):
+    done = sum(1 for it in items if it["id"] in answers)
+    head = (f"<!doctype html><html lang='ko'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
+            f"<title>글 판정</title><style>{JUDGE_CSS}</style></head><body><header><b>글 판정 {done}/{len(items)}</b>"
+            f"<div class='bar'><i style='width:{done * 100 // max(len(items), 1)}%'></i></div><nav>"
+            + (f"<a href='/?i={i - 1}'>이전</a>" if 0 < i <= len(items) else "") + (f"<a href='/?i={i + 1}'>다음</a>" if i < len(items) - 1 else "")
+            + "</nav></header><main>")
+    if i >= len(items):
+        left = [n for n, it in enumerate(items) if it["id"] not in answers]
+        body = ("<div class='done'><h2>모두 골랐습니다</h2><p>이 창을 닫아도 됩니다. 답은 저장됐습니다.</p></div>" if not left else
+                f"<div class='done'><h2>아직 고르지 않은 쌍이 {len(left)}개 있습니다</h2><p><a href='/?i={left[0]}'>처음 남은 쌍으로 가기</a></p></div>")
+        return head + body + "</main></body></html>"
+    it, prev = items[i], answers.get(items[i]["id"], {})
+    qs = "".join(f"<div class='q'><span>{label}</span>" + "".join(
+        f"<label><input type='radio' name='{key}' value='{v}' required {'checked' if prev.get(key) == v else ''}>{t}</label>"
+        for v, t in (("A", "A"), ("tie", "비슷"), ("B", "B"))) + "</div>" for key, label in QUESTIONS)
+    return (head + f"<details><summary>{html.escape(it['kind'] or '종류 없음')} · 이 요청으로 쓴 글입니다 (펼쳐 보기)</summary><pre>{html.escape(it['ask'])}</pre></details>"
+            f"<div class='docs'><article><span class='tag'>A</span>{md_html(it['A'])}</article><article><span class='tag'>B</span>{md_html(it['B'])}</article></div>"
+            f"<form method='post' action='/save'><input type='hidden' name='i' value='{i}'>{qs}"
+            f"<textarea name='memo' placeholder='고른 까닭이나 눈에 띈 점 (안 써도 됩니다)'>{html.escape(prev.get('memo', ''))}</textarea>"
+            "<button>저장하고 다음 쌍</button></form></main></body></html>")
+
+
+def serve_judge(folder, items, port):
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    import urllib.parse
+    import webbrowser
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def send(self, code, body="", where=None):
+            self.send_response(code)
+            if where:
+                self.send_header("Location", where)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(body.encode("utf-8"))
+
+        def do_GET(self):
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            if urllib.parse.urlparse(self.path).path != "/":
+                return self.send(404, "없음")
+            answers = judge_answers(folder)
+            first = next((n for n, it in enumerate(items) if it["id"] not in answers), len(items))
+            i = int(q["i"][0]) if q.get("i", [""])[0].isdigit() else first
+            self.send(200, judge_page(items, answers, min(i, len(items))))
+
+        def do_POST(self):
+            form = urllib.parse.parse_qs(self.rfile.read(int(self.headers.get("Content-Length", 0))).decode("utf-8"))
+            i = int(form.get("i", ["0"])[0])
+            row = {"id": items[i]["id"], **{k: form.get(k, [""])[0] for k, _ in QUESTIONS},
+                   "memo": form.get("memo", [""])[0].strip(), "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+            with open(folder / "answers.jsonl", "a", encoding="utf-8") as f:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+            answers = judge_answers(folder)
+            nxt = next((n for n in list(range(i + 1, len(items))) + list(range(i)) if items[n]["id"] not in answers), len(items))
+            self.send(303, where=f"/?i={nxt}")
+
+    srv = ThreadingHTTPServer(("127.0.0.1", port), H)
+    url = f"http://127.0.0.1:{srv.server_address[1]}/"
+    print(f"판정 화면: {url} (멈추려면 Ctrl+C). 답은 {folder / 'answers.jsonl'} 에 남는다", flush=True)
+    webbrowser.open(url)
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        pass
+
+
+def binom_p(k, n):
+    """한쪽이 n 번 가운데 k 번 이겼을 때 반반이라는 가정에서 그만큼 치우칠 양쪽 확률."""
+    if not n:
+        return None
+    lo = min(k, n - k)
+    return min(1.0, 2 * sum(math.comb(n, j) for j in range(lo + 1)) / 2 ** n)
+
+
+def judge_section():
+    out = []
+    for folder in sorted(JUDGE.iterdir()) if JUDGE.exists() else []:
+        answers, key = judge_answers(folder), json.loads((folder / "key.json").read_text(encoding="utf-8")) if (folder / "key.json").exists() else {}
+        answers = {k: v for k, v in answers.items() if k in key}
+        if not answers:
+            continue
+        side = lambda jid, v: "tie" if v not in ("A", "B") else key[jid]["A"] if v == "A" else ("off" if key[jid]["A"] == "on" else "on")
+        lines = ["| 물음 | 켠 글 | 끈 글 | 비슷 | 켠 글을 고른 비율 | p |", "|---" * 6 + "|"]
+        for q, label in QUESTIONS:
+            c = Counter(side(j, a.get(q)) for j, a in answers.items())
+            n = c["on"] + c["off"]
+            p = binom_p(c["on"], n)
+            lines.append(f"| {label} | {c['on']} | {c['off']} | {c['tie']} | {c['on'] / n:.0%} | {'' if p is None else f'{p:.3f}'} |" if n else
+                         f"| {label} | 0 | 0 | {c['tie']} |  |  |")
+        by = ["| 출처 | 쌍 | 전체로 켠 글 | 끈 글 | 비슷 |", "|---" * 5 + "|"]
+        for src in sorted({key[j]["source"] for j in answers}):
+            c = Counter(side(j, a.get("overall")) for j, a in answers.items() if key[j]["source"] == src)
+            by.append(f"| {src} | {sum(c.values())} | {c['on']} | {c['off']} | {c['tie']} |")
+        mark = lambda j: "[확인 필요" in (DATA / key[j]["on"]).read_text(encoding="utf-8")
+        for has in (True, False):
+            c = Counter(side(j, a.get("overall")) for j, a in answers.items() if mark(j) == has)
+            by.append(f"| 켠 글에 [확인 필요] {'있음' if has else '없음'} | {sum(c.values())} | {c['on']} | {c['off']} | {c['tie']} |")
+        out.append(f"### 사람 쌍대 비교 {folder.name}\n\n같은 요청으로 끄고, 켜고 쓴 글을 A 와 B 에 무작위로 놓고 사람이 골랐다. "
+                   f"판정자는 어느 쪽이 켠 글인지 모른다. {len(answers)}/{len(key)}쌍을 골랐고, p 는 비슷을 뺀 부호 시험이다. "
+                   "켠 글은 모르는 사실을 `[확인 필요]` 로 비워 두어 이것만으로 켠 글을 알아볼 수도 있다. "
+                   "그래서 출처별 표 끝에 켠 글에 이 표시가 있는 쌍과 없는 쌍을 나눠 보인다.\n\n"
+                   + "\n".join(lines) + "\n\n" + "\n".join(by) + "\n")
+    return out
 
 
 def main():
@@ -896,8 +1170,16 @@ def main():
     sub.add_parser("measure", help="모은 글을 모두 잰다")
     r = sub.add_parser("report", help="보고서를 낸다")
     r.add_argument("--record", action="store_true")
+    j = sub.add_parser("judge", help="끈 글과 켠 글을 나란히 놓고 사람이 고른다")
+    j.add_argument("action", choices=("make", "serve"))
+    j.add_argument("--name", default=date.today().isoformat(), help="판정 묶음 이름. 주지 않으면 오늘 날짜")
+    j.add_argument("--n", type=int, default=30)
+    j.add_argument("--seed", type=int, default=1)
+    j.add_argument("--port", type=int, default=0)
+    j.add_argument("--redo", action="store_true")
     a = ap.parse_args()
-    {"gen": cmd_gen, "fetch": cmd_fetch, "pairs": cmd_pairs, "measure": cmd_measure, "report": cmd_report}[a.cmd](a)
+    {"gen": cmd_gen, "fetch": cmd_fetch, "pairs": cmd_pairs, "measure": cmd_measure, "report": cmd_report,
+     "judge": cmd_judge}[a.cmd](a)
 
 
 if __name__ == "__main__":
