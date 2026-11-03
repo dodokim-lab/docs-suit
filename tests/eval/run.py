@@ -24,6 +24,7 @@ import tempfile
 import threading
 import time
 import urllib.request
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from pathlib import Path
@@ -147,7 +148,20 @@ def write_one(agent, item, base, model, on):
             "model": first["model"], "cost": round(cost, 4), "sec": round(time.time() - t0),
             "followup": (tmp / "transcript-2.jsonl").exists(),
             "set": "pairs" if item.get("pair") else "cases", "pair": item.get("pair")}
+    if on:
+        meta["compose"] = first_compose(tmp)
     return body_of(agent, tmp, on), meta
+
+
+def first_compose(tmp):
+    """켠 글이 처음 부른 compose 의 인자. 어떤 문서 종류와 독자로 조립했는지 보고서에 보인다."""
+    for name in ("calls.jsonl", "calls-2.jsonl"):
+        f = tmp / name
+        for line in (f.read_text(encoding="utf-8").splitlines() if f.exists() else []):
+            argv = json.loads(line).get("argv") or []
+            if argv[:1] == ["compose"]:
+                return argv[1:]
+    return None
 
 
 def cmd_gen(a):
@@ -210,14 +224,112 @@ def fetch_katfish():
             print(f"{group}/katfish-{genre}: {len(list((DATA / group / f'katfish-{genre}').glob('*.md')))}편", file=sys.stderr)
 
 
+KOREA = "https://www.korea.kr"
+UA = {"User-Agent": "Mozilla/5.0 (docs-suit eval; https://github.com/dodokim-lab/docs-suit)"}
+# 보도자료 본문 뒤에 붙는 문의 문단과 참고 자료. 여기서 본문을 끊는다. 담당자 이름과 전화번호가 이 부분과 머리 표에 있다
+PRESS_TAIL = re.compile(r"^\s*(?:○\s*)?[【\[<]?\s*(?:참고\s*\d|붙임|별첨|첨부\s*(?:[:：]|\d)|※\s*참고)|연락\s*주시기\s*바랍니다|문의\s*[:：]|^\s*끝\.?\s*$")
+# 정부 문서가 머리표로 쓰는 글자. 한글 자모 ㅇ 과 가운뎃점, 한글 프로그램의 사용자 정의 글리프를 동그라미로 바꿔 목록으로 센다
+GOV_BULLET = re.compile(r"^(?:ㅇ|[･・ㆍ∙]|[\ue000-\uf8ff\U000f0000-\U000ffffd])\s*")
+
+
+def get(url):
+    time.sleep(0.5)  # 공공 서버에 몰아서 요청하지 않는다
+    with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=60) as r:
+        return r.read()
+
+
+def press_body(text):
+    """hwpx 에서 뽑은 보도자료 글의 본문. 표 줄은 머리 상자와 담당자 표, 붙임 표라 걷고, 문의 문단이나 참고 자료가
+    나오면 그 뒤를 버린다."""
+    out = []
+    for ln in text.splitlines():
+        ln = GOV_BULLET.sub("○ ", ln.strip())
+        if PRESS_TAIL.search(ln):
+            if out:
+                break
+            continue  # 본문 앞의 담당자 줄
+        if re.search(r"\s끝\.?\s*$", ln):  # 본문 마지막 문장 뒤의 "끝." 표시
+            ln = re.sub(r"\s끝\.?\s*$", "", ln)
+            out.append(ln)
+            break
+        if re.match(r"※.*사진", ln):
+            continue
+        if ln and not ln.startswith("|"):
+            # 큰 네모는 문단 머리표라 줄글 문단이면 걷는다. 작은 동그라미와 붙임표는 개조식 항목이라 목록으로 둔다
+            if ln.startswith("□") and re.search(r"다\.\s*$", ln):
+                ln = ln.lstrip("□ ")
+            out.append(ln)
+    return "\n\n".join(out)
+
+
+def fetch_korea_press(want=30):
+    """정책브리핑 보도자료를 2022년 1월부터 11월까지 달마다 고루 받는다. 공공누리 제1유형이고 ChatGPT 공개 전 글이다.
+    본문이 hwpx 첨부에만 있어 엔진의 hwpx 추출기로 읽는다. 문장 수치를 잴 줄글 문장이 여섯 개 넘는 글만 고른다.
+    줄글 비율로 거르면 개조식이 흔한 보도자료 가운데 줄글이 많은 글만 남아 사람 글이 치우친다. 원본 hwpx 는 raw/korea-press 에 두고 해시를 남긴다."""
+    import hashlib
+    raw = DATA / "raw" / "korea-press"
+    out = DATA / "human" / "korea-press"
+    raw.mkdir(parents=True, exist_ok=True)
+    out.mkdir(parents=True, exist_ok=True)
+    have = len(list(out.glob("*.md")))
+    per_month = -(-want // 11)
+    for month in range(1, 12):
+        got = 0
+        end = "2022-11-29" if month == 11 else f"2022-{month:02d}-28"
+        ids = []
+        for n in (2, 3, 4):  # 첫 쪽은 그 달 말일의 글이 몰려 있어 둘째 쪽부터 본다
+            page = get(f"{KOREA}/briefing/pressReleaseList.do?period=direct&startDate=2022-{month:02d}-01&endDate={end}&pageIndex={n}")
+            ids += re.findall(r"pressReleaseView\.do\?newsId=(\d+)", page.decode("utf-8", "replace"))
+        ids = list(dict.fromkeys(ids))
+        for nid in ids:
+            if got >= per_month or have >= want:
+                break
+            if (out / f"{nid}.md").exists():
+                continue
+            view = get(f"{KOREA}/briefing/pressReleaseView.do?newsId={nid}").decode("utf-8", "replace")
+            if "공공누리 제1유형" not in view and "자유이용허락 1유형" not in view:
+                continue
+            files = re.findall(r'download\.do\?fileId=(\d+)&amp;tblKey=(\w+)">\s*(?:<img[^>]*>)?([^<]*?\.hwpx)', view)
+            title = re.search(r"<title>([^<]*)</title>", view)
+            day = re.search(r"(2022\.\d{2}\.\d{2})", view)
+            if not files or not day:
+                continue
+            fid, tbl, _ = files[0]
+            f = raw / f"{nid}.hwpx"
+            if not f.exists():
+                f.write_bytes(get(f"{KOREA}/common/download.do?fileId={fid}&tblKey={tbl}"))
+            try:
+                text, _ = suit._doc_text(f, ".hwpx")
+            except ValueError:
+                continue
+            body = press_body(text)
+            sents = sum(len(r) for r in suit.sentences(body))
+            if not (600 <= len(body) <= 3000 and sents > 6):
+                continue
+            name = re.sub(r"\s+-\s+보도자료\s*$", "", title.group(1).split("|")[0].strip() if title else "").replace("&quot;", '"')
+            (out / f"{nid}.md").write_text(f"# {name}\n\n{body}\n", encoding="utf-8")
+            (out / f"{nid}.json").write_text(json.dumps({
+                "kind": "notice", "label": "보도자료", "source": "korea-press", "date": day.group(1),
+                "url": f"{KOREA}/briefing/pressReleaseView.do?newsId={nid}", "license": "공공누리 제1유형(출처표시), 정책브리핑",
+                "sha256": hashlib.sha256(f.read_bytes()).hexdigest()}, ensure_ascii=False), encoding="utf-8")
+            got += 1
+            have += 1
+        print(f"2022-{month:02d}: {got}편, 모두 {have}편", file=sys.stderr)
+
+
 def cmd_fetch(a):
-    {"katfish": fetch_katfish}[a.source]()
+    {"katfish": fetch_katfish, "korea-press": fetch_korea_press}[a.source]()
 
 
 # ---------------------------------------------------------------- 짝 요청
-PAIR_PROMPT = """아래 글은 사람이 쓴 {label}이다. 이 글을 보지 못한 사람이 AI 에게 같은 문서를 써 달라고 할 때 보낼 요청문을 만들어라.
+def batchim(word):
+    ch = word.strip()[-1:]
+    return bool(ch) and "가" <= ch <= "힣" and (ord(ch) - 0xAC00) % 28 != 0
 
-- 요청문은 "{label}을 써 줘" 처럼 시작하고, 글에 나온 사실을 빠짐없이 목록으로 넣는다. 사실은 수치, 이름, 날짜, 대상, 방법, 결과 같은 것이다.
+
+PAIR_PROMPT = """아래 글은 사람이 쓴 {label_is}. 이 글을 보지 못한 사람이 AI 에게 같은 문서를 써 달라고 할 때 보낼 요청문을 만들어라.
+
+- 요청문은 "{label_obj} 써 줘" 처럼 시작하고, 글에 나온 사실을 빠짐없이 목록으로 넣는다. 사실은 수치, 이름, 날짜, 대상, 방법, 결과 같은 것이다.
 - 글의 문장과 표현, 문단 순서는 옮기지 않는다. 사실만 낱말 단위로 적는다.
 - 누가 읽을 글인지와 대략의 분량(공백 포함 몇 자)을 한 줄씩 적는다.
 - 요청문만 출력한다. 앞뒤에 설명을 붙이지 않는다.
@@ -251,7 +363,10 @@ def cmd_pairs(a):
         if spent() >= a.cap:
             return None
         meta = json.loads(f.with_suffix(".json").read_text(encoding="utf-8"))
-        ask, cost = ask_claude(PAIR_PROMPT.format(label=th.kinds[meta["kind"]]["label"], text=f.read_text(encoding="utf-8")), a.model)
+        label = meta.get("label") or th.kinds[meta["kind"]]["label"]
+        prompt = PAIR_PROMPT.format(label_is=label + ("이다" if batchim(label) else "다"),
+                                    label_obj=label + ("을" if batchim(label) else "를"), text=f.read_text(encoding="utf-8"))
+        ask, cost = ask_claude(prompt, a.model)
         pay(cost, f"pairs/{a.source}/{f.stem}")
         return {"id": f"{a.source}-{f.stem}", "kind": meta["kind"], "ask": ask, "pair": {"source": a.source, "id": f.stem}}
 
@@ -333,7 +448,8 @@ def cmd_measure(a):
         hits = {k: v for k, v in suit.tell_hits(th, doc, meta.get("kind")).items() if v}
         shown = [n for n, *_ in suit.tells_found(th, doc, {}, meta.get("kind"))]
         rows.append({"group": group, "source": source, "id": f.stem, "kind": meta.get("kind"), "m": m,
-                     "tells": hits, "shown": shown, "set": meta.get("set", "cases"), "pair": meta.get("pair")})
+                     "tells": hits, "shown": shown, "set": meta.get("set", "cases"), "pair": meta.get("pair"),
+                     "compose": meta.get("compose")})
     (DATA / "measures.jsonl").write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8")
     count = {}
     for r in rows:
@@ -372,8 +488,19 @@ def med(xs):
     return statistics.median(xs) if xs else None
 
 
+def composed_kind(row):
+    argv = row.get("compose")
+    if argv is None:
+        return "모름"
+    return next((argv[i + 1] for i, v in enumerate(argv[:-1]) if v == "--kind"), "없음")
+
+
 def fmt(x):
-    return "" if x is None else f"{x:.3g}" if isinstance(x, float) else str(x)
+    if x is None:
+        return ""
+    if isinstance(x, float) and abs(x) >= 100:
+        return f"{x:.0f}"
+    return f"{x:.3g}" if isinstance(x, float) else str(x)
 
 
 def table(title, groups, keys, note=""):
@@ -429,13 +556,16 @@ def cmd_report(a):
                 f"{sum(closer)}가지에서 켠 글이 사람 글에 더 가깝다: {', '.join(n for n in names if n)}.")
         if source.startswith("katfish"):
             note += " KatFish 원문은 문단 구분 없이 한 줄이라 줄과 문단, 목록, 제목 수치는 견주지 않는다."
+        picked = Counter(composed_kind(r) for r in groups["켠 글"])
+        if picked:
+            note += " 켠 글이 고른 문서 종류는 " + ", ".join(f"{k} {n}편" for k, n in picked.most_common()) + "이다."
         out.append(table(f"짝 묶음 {source}: 사람 글과 끈 글, 켠 글", groups, use, note))
     for source in sorted({r["source"] for r in rows if r["group"] == "human"}):
         tag = source.split("-", 1)[-1]
-        groups = {"사람 글": by(group="human", source=source)}
         llm = by(group="llm", source=f"{source}")
-        if llm:
-            groups["LLM 글"] = llm
+        if not llm:
+            continue  # 연구진의 LLM 글이 없는 사람 글은 짝 묶음에서 견준다
+        groups = {"사람 글": by(group="human", source=source), "LLM 글": llm}
         use = [k for k in keys if not (source.startswith("katfish") and k in ONE_LINE)]
         out.append(table(f"연구 데이터 {source}: 사람 글과 LLM 글", groups, use,
                          f"{tag} 장르에서 사람 글과 연구진이 만든 LLM 글을 견준다. 지표가 AI 글을 가르는 힘을 docs-suit 와 상관없이 잰다. "
@@ -476,7 +606,7 @@ def main():
     g.add_argument("--jobs", type=int, default=4)
     g.add_argument("--cap", type=float, default=40.0, help="사용료 상한(달러). spent.jsonl 의 합으로 잰다")
     f = sub.add_parser("fetch", help="사람 글과 연구 데이터를 받는다")
-    f.add_argument("source", choices=("katfish",))
+    f.add_argument("source", choices=("katfish", "korea-press"))
     p = sub.add_parser("pairs", help="사람 글의 사실로 같은 문서를 써 달라는 요청을 만든다")
     p.add_argument("source", help="human/ 아래 묶음 이름. 예: katfish-abstract")
     p.add_argument("--limit", type=int, default=30)
