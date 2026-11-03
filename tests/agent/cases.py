@@ -65,6 +65,8 @@ CASES = [
      "ask": "팀 저장소 온보딩 가이드 써 줘. 처음 받으면 make setup 으로 의존성을 깔고, .env.example 을 .env 로 복사해서 DB_URL 을 채워야 해. make db 로 로컬 DB 를 띄운 다음 make run 하면 8080 에서 떠. 8080 을 다른 프로그램이 쓰고 있으면 안 떠. make reset 은 로컬 DB 데이터를 다 지우니까 조심해야 하고, 테스트는 make test 인데 DB 가 떠 있어야 돌아가."},
     {"id": "notice", "kind": "notice", "audience": "stakeholder",
      "ask": "다른 팀에 다음 주 API 변경을 알리는 공지 써 줘. 응답 필드 하나의 이름이 바뀌어."},
+    {"id": "press-release", "kind": "press-release", "facts": ["11월 10일", "1분"],
+     "ask": "구청 교통과에서 낼 보도자료 써 줘. 11월 10일(화)부터 구청 앱에서 마을버스 정류장 대기 시간을 1분 단위로 볼 수 있게 돼. 지금은 5분 단위였어. 관내 정류장 42곳이 대상이야."},
     {"id": "script", "kind": "script",
      "ask": "다음 주 동아리 발표 원고 써 줘. 정류장 대기 시간 조사 결과를 5분 동안 말로 발표할 거고, 슬라이드는 이미 만들어 뒀어."},
     {"id": "patient-guide", "facts": [["2시간", "두 시간"], ["사흘", "3일"]], "kind": "patient-guide", "audience": "patient",

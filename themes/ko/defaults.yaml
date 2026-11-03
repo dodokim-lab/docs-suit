@@ -68,6 +68,7 @@ kinds:
   sns: {label: SNS 글, audience: [reader], skeleton: template, diagram: none, sources: link}
   guide: {label: 가이드·README·위키, audience: [reader], skeleton: template}
   notice: {label: 공지, audience: [stakeholder], skeleton: template}
+  press-release: {label: 보도자료, audience: [reader], skeleton: template}
   script: {label: 발표 원고, audience: [listener], skeleton: template, voice: prose, diagram: none}
   patient-guide: {label: 환자 안내문, audience: [patient], skeleton: template}
   opinion: {label: 의견서·자문 답변, audience: [client], skeleton: template}
@@ -95,6 +96,7 @@ prefer:
   sns: {length: brief, emphasis: none, markup: plain}
   guide: {sources: link, diagram: table}
   notice: {length: brief, diagram: table}
+  press-release: {register: plain, length: page, diagram: table, sources: link}
   script: {emphasis: none, markup: plain}
   patient-guide: {voice: bullet, length: brief, terms: everyday, visual-doc: print}
   opinion: {length: page, diagram: table, sources: footnote}
@@ -113,5 +115,6 @@ must:
   biz-report: [요약, 요청 사항]
   guide: [빠른 시작]
   notice: [적용 시점, 할 일, 문의]
+  press-release: [문의]
   patient-guide: [주의 사항, 바로 연락할 때]
   opinion: [결론, 전제, 근거]

@@ -2,7 +2,7 @@ class:
   order: 6
   label: 직장인
   desc: 업무 보고와 메일, 회의록을 매일 쓰는 사람
-  kinds: [work-report, biz-report, email, minutes, slides, notice]
+  kinds: [work-report, biz-report, email, minutes, slides, notice, press-release]
   titles: [사원, 대리, 과장, 차장, 부장]  # 기본, 1차, 2차, 3차, 4차 전직 칭호
   icon: 💼  # 상태 줄에서 캐릭터 대신 쓰는 이모지. 한 글자짜리만 쓴다
 
