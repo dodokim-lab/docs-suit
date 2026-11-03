@@ -10,9 +10,10 @@
 없는 연구 데이터를 공개 저장소에 넣지 않기 위해서다. 저장소에는 잰 수치와 보고서만 남긴다.
 에이전트가 도는 작업 폴더는 시스템 임시 폴더에 따로 만든다. 홈 폴더 아래에서 돌리면 Claude Code 가 상위 폴더의
 ~/.claude/CLAUDE.md 와 개인 스킬을 지침으로 실어서, 끈 글까지 그 사람의 문체 지침을 받고 쓴다.
-사용료는 spent.jsonl 에 쌓고, 합이 --cap 에 닿으면 새 글을 쓰지 않는다. 동시에 도는 글이 있어 --jobs 건만큼 넘을 수 있다.
+사용료는 spent.jsonl 에 쌓는다. --cap 을 주면 합이 그 값에 닿은 뒤 새 글을 쓰지 않고, 동시에 도는 글이 있어 --jobs 건만큼 넘을 수 있다.
 """
 import argparse
+import html
 import importlib.util
 import json
 import os
@@ -23,6 +24,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.error
 import urllib.request
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
@@ -173,12 +175,12 @@ def cmd_gen(a):
     work = scratch(f"docs-suit-eval-{run}-")
     jobs = [(item, mode) for mode in a.mode.split(",") for item in items
             if a.redo or not (out / mode / f"{item['id']}.md").exists()]
-    print(f"{a.set} 묶음 {len(items)}건, 쓸 글 {len(jobs)}편, 지금까지 쓴 사용료 {spent():.2f}달러, 상한 {a.cap}달러, "
+    print(f"{a.set} 묶음 {len(items)}건, 쓸 글 {len(jobs)}편, 지금까지 쓴 사용료 {spent():.2f}달러, 상한 {a.cap or '없음'}{'달러' if a.cap else ''}, "
           f"글은 {out}, 작업 폴더는 {work}", file=sys.stderr)
 
     def job(pair):
         item, mode = pair
-        if spent() >= a.cap:
+        if a.cap and spent() >= a.cap:
             return f"건너뜀 {mode}/{item['id']}: 사용료 상한"
         shutil.rmtree(work / mode / item["id"], ignore_errors=True)
         (work / mode).mkdir(parents=True, exist_ok=True)
@@ -232,10 +234,17 @@ PRESS_TAIL = re.compile(r"^\s*(?:○\s*)?[【\[<]?\s*(?:참고\s*\d|붙임|별�
 GOV_BULLET = re.compile(r"^(?:ㅇ|[･・ㆍ∙]|[\ue000-\uf8ff\U000f0000-\U000ffffd])\s*")
 
 
-def get(url):
-    time.sleep(0.5)  # 공공 서버에 몰아서 요청하지 않는다
-    with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=60) as r:
-        return r.read()
+def get(url, tries=5):
+    for i in range(tries):
+        time.sleep(0.5 * 2 ** i)  # 공공 서버에 몰아서 요청하지 않고, 서버 오류면 점점 길게 쉬고 다시 묻는다
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=60) as r:
+                return r.read()
+        except urllib.error.HTTPError as e:
+            if (e.code < 500 and e.code != 429) or i == tries - 1:
+                raise
+            if e.code == 429:  # 요청 수 제한이면 서버가 알려 준 만큼, 없으면 30초 넘게 기다린다
+                time.sleep(int(e.headers.get("Retry-After") or 30 * 2 ** i))
 
 
 def press_body(text):
@@ -317,8 +326,98 @@ def fetch_korea_press(want=30):
         print(f"2022-{month:02d}: {got}편, 모두 {have}편", file=sys.stderr)
 
 
+# 정책브리핑에서 본문이 HTML 에 든 글. 연설문은 공공누리가 붙지 않아 저작권법 제24조(정치적 연설 등의 이용)에 기댄다
+KOREA_HTML = {
+    "korea-speech": {"list": "briefing/speechList.do", "view": "briefing/speechView.do", "kind": "script", "label": "연설문",
+                     "license": "저작권법 제24조, 정책브리핑 연설문"},
+    "korea-reporter": {"list": "news/reporterList.do", "view": "news/reporterView.do", "kind": "blog", "label": "정책기자단 기사",
+                       "license": "공공누리 제1유형(출처표시), 정책브리핑 정책기자단", "kogl": True},
+}
+
+
+def korea_html_body(view):
+    """정책브리핑 글 화면에서 본문만 뽑는다. 사진 표와 설명, 기자 이름과 메일 줄, 출처 줄은 걷는다.
+    <br> 두 번은 문단을 나누고 한 번은 같은 문단 안의 줄이라 빈칸으로 잇는다."""
+    i = view.find('class="view_cont"')
+    if i < 0:
+        return ""
+    seg = view[view.find(">", i) + 1:]
+    seg = seg[:min(x for x in (seg.find('class="article_footer"'), seg.find('class="source"'), len(seg)) if x >= 0)]
+    seg = re.sub(r"<[^<>]*$", "", seg)  # 끊은 자리에 걸친 태그 조각
+    seg = re.sub(r"<table.*?</table>", "\n\n", seg, flags=re.S | re.I)
+    seg = re.sub(r"(?:<br\s*/?>\s*){2,}|</p>|</div>|</h\d>", "\n\n", seg, flags=re.I)
+    seg = re.sub(r"<br\s*/?>", " ", seg, flags=re.I)
+    text = html.unescape(re.sub(r"<[^>]+>", "", seg)).replace("\xa0", " ")
+    paras = []
+    for para in re.split(r"\n\s*\n", text):
+        para = " ".join(para.split())
+        if not para or "@" in para or "정책기자단" in para or para.startswith("<자료출처"):
+            continue  # 기자 이름과 메일, 출처 줄
+        paras.append(GOV_BULLET.sub("○ ", para))
+    return "\n\n".join(paras)
+
+
+def fetch_korea_html(source, want=30):
+    """정책브리핑의 연설문이나 정책기자단 글을 2022년 1월부터 11월까지 달마다 고루 받는다. 줄글 문장이 여섯 개 넘고
+    600~3000자인 글만 고른다. 정책기자단 글은 공공누리 제1유형이 붙은 글만 받는다."""
+    cfg = KOREA_HTML[source]
+    out = DATA / "human" / source
+    out.mkdir(parents=True, exist_ok=True)
+    have = len(list(out.glob("*.md")))
+    per_month = -(-want // 11)
+    for month in range(1, 12):
+        got = 0
+        end = "2022-11-29" if month == 11 else f"2022-{month:02d}-28"
+        ids = []
+        for n in (1, 2, 3):
+            page = get(f"{KOREA}/{cfg['list']}?period=direct&startDate=2022-{month:02d}-01&endDate={end}&pageIndex={n}")
+            ids += re.findall(re.escape(cfg["view"].split("/")[-1]) + r"\?newsId=(\d+)", page.decode("utf-8", "replace"))
+        for nid in dict.fromkeys(ids):
+            if got >= per_month or have >= want:
+                break
+            if (out / f"{nid}.md").exists():
+                continue
+            view = get(f"{KOREA}/{cfg['view']}?newsId={nid}").decode("utf-8", "replace")
+            day = re.search(r"(2022\.\d{2}\.\d{2})", view)
+            if not day or (cfg.get("kogl") and "자유이용허락 1유형" not in view and "공공누리 제1유형" not in view):
+                continue
+            body = korea_html_body(view)
+            sents = sum(len(r) for r in suit.sentences(body))
+            if not (600 <= len(body) <= 3000 and sents > 6):
+                continue
+            title = re.search(r"<title>([^<]*)</title>", view)
+            name = html.unescape(re.sub(r"\s+-\s+[^-|]+$", "", title.group(1).split("|")[0].strip()) if title else "")
+            (out / f"{nid}.md").write_text(f"# {name}\n\n{body}\n", encoding="utf-8")
+            (out / f"{nid}.json").write_text(json.dumps({
+                "kind": cfg["kind"], "label": cfg["label"], "source": source, "date": day.group(1),
+                "url": f"{KOREA}/{cfg['view']}?newsId={nid}", "license": cfg["license"]}, ensure_ascii=False), encoding="utf-8")
+            got += 1
+            have += 1
+        print(f"{source} 2022-{month:02d}: {got}편, 모두 {have}편", file=sys.stderr)
+
+
+GEC_ROWS = "https://datasets-server.huggingface.co/rows?dataset=jaban%2Ferr_spelling_kor&config=default&split=val"
+
+
+def fetch_gec():
+    """맞춤법 교정 데이터의 검증 묶음 4,300쌍을 받는다. 틀린 문장(err)과 고친 문장(cor)의 짝이다. 올린 사람은 Apache-2.0 이라고
+    적었지만 원출처를 확인하지 못해 로컬 검증에만 쓴다. 신청서가 필요한 Standard Korean GEC 말뭉치를 받기 전까지 쓴다."""
+    out = DATA / "raw" / "gec" / "val.jsonl"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    rows = []
+    while True:
+        page = json.loads(get(f"{GEC_ROWS}&offset={len(rows)}&length=100"))
+        rows += [{"err": r["row"]["err"], "cor": r["row"]["cor"]} for r in page["rows"]]
+        if not page["rows"] or len(rows) >= page.get("num_rows_total", 0):
+            break
+    out.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8")
+    print(f"맞춤법 교정 짝 {len(rows)}쌍을 {out} 에 받았다", file=sys.stderr)
+
+
 def cmd_fetch(a):
-    {"katfish": fetch_katfish, "korea-press": fetch_korea_press}[a.source]()
+    if a.source in KOREA_HTML:
+        return fetch_korea_html(a.source)
+    {"katfish": fetch_katfish, "korea-press": fetch_korea_press, "gec": fetch_gec}[a.source]()
 
 
 # ---------------------------------------------------------------- 짝 요청
@@ -360,7 +459,7 @@ def cmd_pairs(a):
     print(f"{a.source} 에서 {len(files)}편을 골랐고 새로 만들 요청 {len(todo)}건, 사용료 합 {spent():.2f}달러", file=sys.stderr)
 
     def one(f):
-        if spent() >= a.cap:
+        if a.cap and spent() >= a.cap:
             return None
         meta = json.loads(f.with_suffix(".json").read_text(encoding="utf-8"))
         label = meta.get("label") or th.kinds[meta["kind"]]["label"]
@@ -551,15 +650,19 @@ def cmd_report(a):
         paired = [r for r in rows if r.get("pair") and r["pair"]["source"] == source]
         ids = {r["pair"]["id"] for r in paired}
         groups = {"사람 글": [r for r in rows if r["group"] == "human" and r["source"] == source and r["id"] in ids],
-                  "끈 글": [r for r in paired if r["group"] == "off"], "켠 글": [r for r in paired if r["group"] == "on"]}
+                  "끈 글": [r for r in paired if r["group"] == "off"]}
+        runs = sorted({r["source"] for r in paired if r["group"] == "on"})
+        for run in runs:
+            groups["켠 글" if len(runs) == 1 else f"켠 글 {run}"] = [r for r in paired if r["group"] == "on" and r["source"] == run]
+        last = list(groups)[-1]  # 견줌 문장은 가장 나중 판의 켠 글로 쓴다
         use = [k for k in keys if not (source.startswith("katfish") and k in ONE_LINE)]
         closer, names = [], []
         for k in CLOSER:
-            h, off, on = (med(vals(groups[n], k)) for n in groups)
+            h, off, on = (med(vals(groups[n], k)) for n in ("사람 글", "끈 글", last))
             if None not in (h, off, on) and off != on:
                 closer.append(abs(on - h) < abs(off - h))
                 names.append(LABEL.get(k, k) if closer[-1] else None)
-        tells = [fmt(med(vals(groups[n], "ai_tells_per_1k"))) for n in groups]
+        tells = [fmt(med(vals(groups[n], "ai_tells_per_1k"))) for n in ("사람 글", "끈 글", last)]
         note = (f"사람 글의 사실만 뽑아 같은 문서를 끄고, 켜고 쓰게 했다. AI 티 층에서 끈 글과 켠 글의 중앙값이 다른 수치 "
                 f"{len(closer)}가지 가운데 {sum(closer)}가지에서 켠 글이 사람 글에 더 가깝다"
                 + (f": {', '.join(n for n in names if n)}." if any(names) else ".")
@@ -567,9 +670,12 @@ def cmd_report(a):
                 " 가독성 층은 사람 글과의 거리로 재지 않는다.")
         if source.startswith("katfish"):
             note += " KatFish 원문은 문단 구분 없이 한 줄이라 줄과 문단, 목록, 제목 수치는 견주지 않는다."
-        picked = Counter(composed_kind(r) for r in groups["켠 글"])
-        if picked:
-            note += " 켠 글이 고른 문서 종류는 " + ", ".join(f"{k} {n}편" for k, n in picked.most_common()) + "이다."
+        for n in [g for g in groups if g.startswith("켠 글")]:
+            picked = Counter(composed_kind(r) for r in groups[n])
+            if picked:
+                note += f" {n}이 고른 문서 종류는 " + ", ".join(f"{k} {c}편" for k, c in picked.most_common()) + "이다."
+        if len(runs) > 1:
+            note += f" 사람 글과의 견줌은 가장 나중 판인 {last}로 셌다."
         out.append(table(f"짝 묶음 {source}: 사람 글과 끈 글, 켠 글", groups, use, note))
     for source in sorted({r["source"] for r in rows if r["group"] == "human"}):
         tag = source.split("-", 1)[-1]
@@ -615,15 +721,15 @@ def main():
     g.add_argument("--run", help="기록 이름. 주지 않으면 날짜와 묶음 이름이다. 같은 이름이면 이미 쓴 글은 건너뛴다")
     g.add_argument("--redo", action="store_true", help="이미 쓴 글도 다시 쓴다")
     g.add_argument("--jobs", type=int, default=4)
-    g.add_argument("--cap", type=float, default=40.0, help="사용료 상한(달러). spent.jsonl 의 합으로 잰다")
+    g.add_argument("--cap", type=float, help="사용료 상한(달러). spent.jsonl 의 합으로 잰다. 주지 않으면 묶지 않는다")
     f = sub.add_parser("fetch", help="사람 글과 연구 데이터를 받는다")
-    f.add_argument("source", choices=("katfish", "korea-press"))
+    f.add_argument("source", choices=("katfish", "korea-press", "korea-speech", "korea-reporter", "gec"))
     p = sub.add_parser("pairs", help="사람 글의 사실로 같은 문서를 써 달라는 요청을 만든다")
     p.add_argument("source", help="human/ 아래 묶음 이름. 예: katfish-abstract")
     p.add_argument("--limit", type=int, default=30)
     p.add_argument("--model", default="sonnet")
     p.add_argument("--jobs", type=int, default=4)
-    p.add_argument("--cap", type=float, default=40.0)
+    p.add_argument("--cap", type=float)
     sub.add_parser("measure", help="모은 글을 모두 잰다")
     r = sub.add_parser("report", help="보고서를 낸다")
     r.add_argument("--record", action="store_true")

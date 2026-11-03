@@ -73,6 +73,8 @@ Antigravity CLI 는 한 번 실행 모드에서 확인 창을 띄우지 못해 �
 python3 tests/eval/run.py gen               # 케이스 묶음을 켜고 끄고 쓴다. 사용료가 든다
 python3 tests/eval/run.py fetch katfish     # 연구 데이터를 받아 사람 글과 LLM 글로 나눈다
 python3 tests/eval/run.py fetch korea-press # 정책브리핑의 2022년 보도자료를 받는다. 공공누리 제1유형이다
+python3 tests/eval/run.py fetch korea-speech # 연설문. 저작권법 제24조에 기댄다. korea-reporter 는 정책기자단 글이다
+python3 tests/eval/run.py fetch gec         # 맞춤법 교정 짝. 띄어쓰기와 맞춤법 패턴이 고친 문장에 걸리지 않는지 잰다
 python3 tests/eval/run.py pairs korea-press # 사람 글의 사실로 같은 문서를 써 달라는 요청을 만든다. 사용료가 든다
 python3 tests/eval/run.py gen --set pairs   # 짝 요청을 켜고 끄고 쓴다
 python3 tests/eval/run.py measure           # 모은 글을 모두 잰다
