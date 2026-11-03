@@ -414,9 +414,25 @@ def fetch_gec():
     print(f"맞춤법 교정 짝 {len(rows)}쌍을 {out} 에 받았다", file=sys.stderr)
 
 
+# 출처마다 따로 둔 수집기. 파일 이름과 함수 이름이다. GitHub 은 gh 로 로그인해 두어야 한다
+SOURCES = {"github-pr": ("github", "fetch_github_pr"), "github-readme": ("github", "fetch_github_readme"),
+           "kdca-health": ("public", "fetch_kdca_health"), "seoul-report": ("public", "fetch_seoul_report")}
+
+
+def load_source(name):
+    spec = importlib.util.spec_from_file_location(f"eval_source_{name}", HERE / "sources" / f"{name}.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mod.DATA, mod.RAW_DIR = DATA, str(DATA / "raw")
+    return mod
+
+
 def cmd_fetch(a):
     if a.source in KOREA_HTML:
         return fetch_korea_html(a.source)
+    if a.source in SOURCES:
+        module, func = SOURCES[a.source]
+        return getattr(load_source(module), func)(DATA / "human" / a.source, want=30)
     {"katfish": fetch_katfish, "korea-press": fetch_korea_press, "gec": fetch_gec}[a.source]()
 
 
@@ -548,7 +564,7 @@ def cmd_measure(a):
         shown = [n for n, *_ in suit.tells_found(th, doc, {}, meta.get("kind"))]
         rows.append({"group": group, "source": source, "id": f.stem, "kind": meta.get("kind"), "m": m,
                      "tells": hits, "shown": shown, "set": meta.get("set", "cases"), "pair": meta.get("pair"),
-                     "compose": meta.get("compose")})
+                     "compose": meta.get("compose"), "suspect": suit.learn_sample(th, f.stem, doc, False)["suspect"]})
     (DATA / "measures.jsonl").write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8")
     count = {}
     for r in rows:
@@ -592,6 +608,36 @@ def vals(rows, key):
 
 def med(xs):
     return statistics.median(xs) if xs else None
+
+
+def noise_section(rows, keys):
+    """같은 요청을 같은 판으로 두 번 쓴 글끼리 가르는 힘. 끈 글과 켠 글의 차이가 이보다 커야 docs-suit 의 효과로 본다."""
+    rep = [r for r in rows if r.get("pair") and "repeat" in r["source"]]
+    out = []
+    for source in sorted({r["pair"]["source"] for r in rep}):
+        ids = {r["pair"]["id"] for r in rep if r["pair"]["source"] == source}
+        mine = [r for r in rows if r.get("pair") and r["pair"]["source"] == source and r["pair"]["id"] in ids]
+        pick = lambda grp, again: [r for r in mine if r["group"] == grp and ("repeat" in r["source"]) == again]
+        on_runs = sorted({r["source"] for r in mine if r["group"] == "on" and "repeat" not in r["source"]})
+        off1, off2, on2 = pick("off", False), pick("off", True), pick("on", True)
+        off1 = [r for r in off1 if r["source"] == min(x["source"] for x in off1)] if off1 else []
+        on1 = [r for r in pick("on", False) if on_runs and r["source"] == on_runs[-1]]
+        if not (off1 and off2 and on1 and on2):
+            continue
+        lines = ["| 층 | 수치 | 끈 글↔끈 글 다시 | 켠 글↔켠 글 다시 | 끈 글↔켠 글 | 흔들림보다 큰가 |", "|---" * 6 + "|"]
+        big = []
+        for k in sorted(keys, key=lambda k: LAYERS.index(LAYER.get(k, "가독성"))):
+            a = [auc(vals(x, k), vals(y, k)) for x, y in ((off1, off2), (on1, on2), (off1, on1))]
+            if None in a:
+                continue
+            a = [max(x, 1 - x) for x in a]
+            real = a[2] >= max(a[0], a[1]) + 0.1
+            big += [LABEL.get(k, k)] if real else []
+            lines.append(f"| {LAYER.get(k, '가독성')} | {LABEL.get(k, k)} | {a[0]:.2f} | {a[1]:.2f} | {a[2]:.2f} | {'예' if real else ''} |")
+        out.append(f"### 실행 사이 흔들림 {source}\n\n같은 요청 {len(ids)}건을 같은 판으로 한 번 더 썼다. 다시 쓴 글끼리의 판별력이 흔들림이고, "
+                   f"끈 글과 켠 글의 판별력이 두 흔들림보다 0.1 넘게 크면 docs-suit 가 바꾼 것으로 본다. 그런 수치가 "
+                   f"{len(big)}가지 있다" + (f": {', '.join(big)}." if big else ".") + "\n\n" + "\n".join(lines) + "\n")
+    return out
 
 
 def composed_kind(row):
@@ -649,8 +695,12 @@ def cmd_report(a):
     for source in sorted({r["pair"]["source"] for r in rows if r.get("pair")}):
         paired = [r for r in rows if r.get("pair") and r["pair"]["source"] == source]
         ids = {r["pair"]["id"] for r in paired}
+        # 같은 요청을 다시 쓴 판(이름에 repeat)은 흔들림 절에서만 쓰고, 끈 글은 처음 쓴 판만 쓴다
+        main = [r for r in paired if "repeat" not in r["source"]]
+        first_off = min((r["source"] for r in main if r["group"] == "off"), default=None)
         groups = {"사람 글": [r for r in rows if r["group"] == "human" and r["source"] == source and r["id"] in ids],
-                  "끈 글": [r for r in paired if r["group"] == "off"]}
+                  "끈 글": [r for r in main if r["group"] == "off" and r["source"] == first_off]}
+        paired = main
         runs = sorted({r["source"] for r in paired if r["group"] == "on"})
         for run in runs:
             groups["켠 글" if len(runs) == 1 else f"켠 글 {run}"] = [r for r in paired if r["group"] == "on" and r["source"] == run]
@@ -677,6 +727,7 @@ def cmd_report(a):
         if len(runs) > 1:
             note += f" 사람 글과의 견줌은 가장 나중 판인 {last}로 셌다."
         out.append(table(f"짝 묶음 {source}: 사람 글과 끈 글, 켠 글", groups, use, note))
+    out += noise_section(rows, keys)
     for source in sorted({r["source"] for r in rows if r["group"] == "human"}):
         tag = source.split("-", 1)[-1]
         llm = by(group="llm", source=f"{source}")
@@ -688,18 +739,44 @@ def cmd_report(a):
                          f"{tag} 장르에서 사람 글과 연구진이 만든 LLM 글을 견준다. 지표가 AI 글을 가르는 힘을 docs-suit 와 상관없이 잰다. "
                          "LLM 글은 GPT-4o, Solar, Qwen2, Llama3.1 이 썼다."))
     human = [r for r in rows if r["group"] == "human"]
-    ai = [r for r in rows if r["group"] in ("llm", "off")]
-    if human and ai:
-        lines = ["| 패턴 | 층 | 사람 글에 보인 비율 | AI 글에 보인 비율 | 1000자당 사람 | 1000자당 AI |", "|---" * 6 + "|"]
+    sets = {"사람 글": human, "LLM 글": [r for r in rows if r["group"] == "llm"],
+            "Claude 끈 글": [r for r in rows if r["group"] == "off"]}
+    sets = {k: v for k, v in sets.items() if v}
+    if len(sets) > 1:
         per_k = lambda r, n: r.get("tells", {}).get(n, 0) * 1000 / max(r["m"]["chars"], 1)
+        lines = ["| 패턴 | 층 | AI 표지 | " + " | ".join(f"{k}에 보인 비율" for k in sets) + " | "
+                 + " | ".join(f"1000자당 {k}" for k in sets) + " |", "|---" * (3 + 2 * len(sets)) + "|"]
         for n, t in th.tells.items():
-            h = sum(1 for r in human if n in r["shown"]) / len(human)
-            g = sum(1 for r in ai if n in r["shown"]) / len(ai)
-            if h or g:
-                lines.append(f"| {t['label']} | {t['layer']} | {h:.1%} | {g:.1%} | "
-                             f"{statistics.mean(per_k(r, n) for r in human):.2f} | {statistics.mean(per_k(r, n) for r in ai):.2f} |")
-        out.append(f"### 문장 규칙 패턴별로 보인 비율\n\n사람 글 {len(human)}편과 AI 글 {len(ai)}편(연구 데이터의 LLM 글과 끈 글)에서 "
-                   "check 가 그 패턴을 보이는 글의 비율이다. 사람 글에 자주 보이는 패턴은 잘못 거는 패턴이다.\n\n" + "\n".join(lines) + "\n")
+            shown = [sum(1 for r in v if n in r["shown"]) / len(v) for v in sets.values()]
+            if any(shown):
+                lines.append(f"| {t['label']} | {t['layer']} | {'아니오' if str(t.get('ai')) == 'false' else '예'} | "
+                             + " | ".join(f"{x:.1%}" for x in shown) + " | "
+                             + " | ".join(f"{statistics.mean(per_k(r, n) for r in v):.2f}" for v in sets.values()) + " |")
+        out.append(f"### 문장 규칙 패턴별로 보인 비율\n\ncheck 가 그 패턴을 보이는 글의 비율이다. LLM 글은 연구 데이터의 글이고, "
+                   "Claude 끈 글은 docs-suit 없이 쓴 글이다. AI 표지가 아닌 패턴은 쉬운 말 규칙이라 사람 글에 보여도 잘못 건 것이 아니다. "
+                   "AI 표지인 패턴이 사람 글에 자주 보이면 잘못 거는 패턴이다.\n\n" + "\n".join(lines) + "\n")
+    # 문체 배우기는 AI 표지가 두 가지 넘게 걸린 샘플을 AI 글로 의심해 제안에서 뺀다. 사람 글을 의심하면 그 글에서 배우지 못한다
+    lines = ["| 묶음 | 글 | AI 글로 의심 |", "|---|---|---|"]
+    for grp in ("human", "llm", "off", "on"):
+        for source in sorted({r["source"] for r in rows if r["group"] == grp}) if grp in ("human", "llm") else [None]:
+            v = [r for r in rows if r["group"] == grp and (source is None or r["source"] == source) and "suspect" in r]
+            if v:
+                name = {"human": "사람", "llm": "LLM", "off": "Claude 끈 글", "on": "Claude 켠 글"}[grp] + (f" {source}" if source else "")
+                lines.append(f"| {name} | {len(v)} | {sum(r['suspect'] for r in v) / len(v):.1%} |")
+    out.append("### 문체 배우기가 AI 글로 의심하는 비율\n\n`learn` 은 AI 표지가 두 가지 넘게 걸린 샘플을 AI 글로 의심해 제안에서 뺀다. "
+               "사람 글 줄은 잘못 의심하는 비율이다.\n\n" + "\n".join(lines) + "\n")
+    gec = DATA / "raw" / "gec" / "val.jsonl"
+    if gec.exists():
+        pairs = [json.loads(x) for x in gec.read_text(encoding="utf-8").splitlines()]
+        lines = ["| 패턴 | 틀린 문장에 걸림 | 고친 문장에 걸림 |", "|---|---|---|"]
+        for n in ("spelling", "spacing"):
+            rx = re.compile(th.tells[n]["re"], re.M)
+            e = sum(1 for x in pairs if rx.search(x["err"]))
+            c = sum(1 for x in pairs if rx.search(x["cor"]))
+            lines.append(f"| {th.tells[n]['label']} | {e}건 ({e / len(pairs):.1%}) | {c}건 ({c / len(pairs):.1%}) |")
+        out.append(f"### 표기 패턴을 맞춤법 교정 짝에 대 본 결과\n\n틀린 문장과 고친 문장 {len(pairs)}쌍이다. 고친 문장에 걸린 것은 잘못 건 것이다. "
+                   "이 데이터의 틀림은 대부분 소리 나는 대로 친 오타라, 틀린 문장을 잡은 비율은 패턴이 겨냥한 꼴만 센다.\n\n"
+                   + "\n".join(lines) + "\n")
     text = "\n".join(out)
     print(text)
     if a.record:
@@ -723,7 +800,7 @@ def main():
     g.add_argument("--jobs", type=int, default=4)
     g.add_argument("--cap", type=float, help="사용료 상한(달러). spent.jsonl 의 합으로 잰다. 주지 않으면 묶지 않는다")
     f = sub.add_parser("fetch", help="사람 글과 연구 데이터를 받는다")
-    f.add_argument("source", choices=("katfish", "korea-press", "korea-speech", "korea-reporter", "gec"))
+    f.add_argument("source", choices=("katfish", "korea-press", "korea-speech", "korea-reporter", "gec") + tuple(SOURCES))
     p = sub.add_parser("pairs", help="사람 글의 사실로 같은 문서를 써 달라는 요청을 만든다")
     p.add_argument("source", help="human/ 아래 묶음 이름. 예: katfish-abstract")
     p.add_argument("--limit", type=int, default=30)

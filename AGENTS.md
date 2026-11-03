@@ -75,13 +75,18 @@ python3 tests/eval/run.py fetch katfish     # 연구 데이터를 받아 사람 
 python3 tests/eval/run.py fetch korea-press # 정책브리핑의 2022년 보도자료를 받는다. 공공누리 제1유형이다
 python3 tests/eval/run.py fetch korea-speech # 연설문. 저작권법 제24조에 기댄다. korea-reporter 는 정책기자단 글이다
 python3 tests/eval/run.py fetch gec         # 맞춤법 교정 짝. 띄어쓰기와 맞춤법 패턴이 고친 문장에 걸리지 않는지 잰다
+python3 tests/eval/run.py fetch github-pr   # MIT 와 Apache 저장소의 PR 설명. github-readme 는 README 다. gh 로그인이 필요하다
+python3 tests/eval/run.py fetch kdca-health # 건강 정보 안내문의 2022년 11월 전 사본. seoul-report 는 서울시 결재문서다. 둘 다 공공누리 제4유형이다
 python3 tests/eval/run.py pairs korea-press # 사람 글의 사실로 같은 문서를 써 달라는 요청을 만든다. 사용료가 든다
 python3 tests/eval/run.py gen --set pairs   # 짝 요청을 켜고 끄고 쓴다
+python3 tests/eval/run.py gen --set pairs --run <날짜>-repeat --only <id,…>  # 같은 요청을 한 번 더 써서 실행 사이 흔들림을 잰다
 python3 tests/eval/run.py measure           # 모은 글을 모두 잰다
 python3 tests/eval/run.py report --record   # 보고서를 tests/eval/results/ 에 남긴다
 ```
 
 - 사람 글은 2022년 11월 전에 쓴 공개 라이선스 글과 연구 데이터만 쓰고, 원문은 저장소에 넣지 않는다. 라이선스 파일이 없는 KatFish 는 로컬 검증에만 쓴다.
+- 수집기는 robots.txt 가 막은 경로를 읽지 않고, 사람 이름과 아이디, 메일, 전화번호를 걷는다. 걷은 뒤에도 직함 옆에 이름이 남은 글은 버린다. 새 출처를 더하면 받은 글을 직접 훑어 이름이 남지 않았는지 본다.
+- 같은 요청을 같은 판으로 두 번 써도 30편 묶음의 판별력은 0.66 까지 흔들린다. 끈 글과 켠 글의 차이가 이 흔들림보다 0.1 넘게 큰 수치만 docs-suit 가 바꾼 것으로 본다. 이름에 `repeat` 가 든 판은 보고서의 흔들림 절에만 쓴다.
 - 에이전트를 돌리는 작업 폴더는 시스템 임시 폴더에 둔다. 홈 폴더 아래에서 돌리면 Claude Code 가 상위 폴더의 `~/.claude/CLAUDE.md` 와 개인 스킬을 지침으로 실어, 끈 글까지 돌리는 사람의 문체 지침을 받고 쓴다. 실행기는 작업 폴더가 홈 폴더 아래에 생기면 멈춘다.
 - 사용료는 `~/.cache/docs-suit-eval/spent.jsonl` 에 쌓이고, 합이 `--cap` 에 닿으면 새 글을 쓰지 않는다. 동작 테스트처럼 로그인과 사용료가 필요해 CI 에 넣지 않는다.
 - 수치 하나로 글을 판정하지 않고, 사람처럼 보이려고 글을 나쁘게 만드는 쪽으로 규칙을 고치지 않는다. 띄어쓰기는 LLM 이 사람보다 잘 지키지만 틀리게 쓰라고 하지 않는다.
