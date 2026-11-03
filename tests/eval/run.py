@@ -537,6 +537,15 @@ PLACEHOLDER = re.compile(r"\[확인 필요[^\]]*\]")
 NUMBER = re.compile(r"(?<![\d.])\d{2,}(?:[.,]\d+)?")  # 두 자리 넘는 수. 목록 번호와 절 번호는 세지 않는다
 
 
+# compose 의 글자수 규칙은 다 쓴 뒤 끝에 "(공백 포함 n자)" 로 센 값을 적게 한다. 답에 붙는 안내 줄이라 본문으로 재지 않고,
+# 판정 화면에서도 켠 글을 드러내지 않게 걷는다
+COUNT_LINE = re.compile(r"^[ \t]*\(공백 포함 [\d,]+자\)[ \t]*\n?", re.M)
+
+
+def strip_count(doc):
+    return COUNT_LINE.sub("", doc).rstrip() + "\n"
+
+
 def cmd_measure(a):
     # 생성한 글이 받은 요청. 요청에 없던 숫자를 셀 때 쓴다
     asks = {c["id"]: c["ask"] for c in plain_cases()}
@@ -550,7 +559,7 @@ def cmd_measure(a):
     for group, source, f, meta in docs():
         # 엔진은 인용 블록을 예문으로 보고 걷지만, 면접 답변처럼 인용 블록에 본문을 담는 글이 있다.
         # 평가에서는 모든 묶음에서 인용 표시만 걷고 쓴 사람의 글로 잰다
-        doc = re.sub(r"^[ \t]*>[ \t]?", "", f.read_text(encoding="utf-8"), flags=re.M)
+        doc = re.sub(r"^[ \t]*>[ \t]?", "", strip_count(f.read_text(encoding="utf-8")), flags=re.M)
         # 켠 글은 모르는 곳을 [확인 필요] 로 비우고 끈 글은 지어서 채운다. 자리표시가 문장 길이와 품사 수치에 섞이지 않게
         # 모든 묶음에서 "미정" 한 낱말로 바꿔 재고, 개수와 요청에 없던 숫자는 내용 수치로 따로 센다
         holes = len(PLACEHOLDER.findall(doc))
@@ -1045,8 +1054,9 @@ def cmd_judge(a):
         for n, (pid, ask, off, on) in enumerate(picked, 1):
             jid = f"j{n:02d}"
             on_is_a = rng.random() < 0.5
+            text = lambda f: strip_count(f.read_text(encoding="utf-8"))
             items.append({"id": jid, "kind": th.kinds.get(ask.get("kind"), {}).get("label", ""), "ask": ask["ask"],
-                          "A": (on if on_is_a else off).read_text(encoding="utf-8"), "B": (off if on_is_a else on).read_text(encoding="utf-8")})
+                          "A": text(on if on_is_a else off), "B": text(off if on_is_a else on)})
             key[jid] = {"pair": pid, "source": ask["pair"]["source"], "A": "on" if on_is_a else "off",
                         "on": str(on.relative_to(DATA)), "off": str(off.relative_to(DATA))}
         folder.mkdir(parents=True, exist_ok=True)
