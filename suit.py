@@ -336,6 +336,7 @@ class Themes:
         self.kinds = conf.get("kinds", {})
         self.prefer = conf.get("prefer", {})
         self.must = conf.get("must", {})
+        self.comma = {k: float(v) for k, v in conf.get("comma", {}).items()}
         tl = self.root / "tells.yaml"
         self.tells = parse_yaml(theme_text(tl)).get("tells", {}) if tl.exists() else {}
         self.classes = {}
@@ -1312,7 +1313,7 @@ def suggest_doc(th, doc, vals, kind=None):
     flat = [s for r in rows for s in r]
     if len(flat) >= 5:
         k = sum(1 for s in flat if CONNECTIVE_COMMA.search(s))
-        if k / len(flat) >= 0.2:
+        if k / len(flat) >= th.comma.get(kind, 0.2):
             out.append(("comma", "연결어미 뒤 쉼표", f"문장 {k}/{len(flat)}", "앞 절이 짧으면 쉼표를 뺀다"))
         avg = sum(map(len, flat)) / len(flat)
         over = sum(1 for s in flat if len(s) > 80)
@@ -4450,6 +4451,8 @@ def selftest(th):
             problems.append(f"tells.yaml 의 {name} 정규식이 틀렸다: {e}")
         check(all(k in th.kinds for k in tl.get("skip") or []), f"tells.yaml 의 {name} skip 에 모르는 종류가 있다")
         check(not tl.get("exposure") or tl["exposure"] in th.axes["exposure"]["values"], f"tells.yaml 의 {name} exposure 를 모른다")
+    for k, v in th.comma.items():
+        check(k in th.kinds and 0.2 <= v < 1, f"comma 의 {k} 는 모르는 종류이거나 값이 0.2~1 밖이다")
     for k, words in th.must.items():
         check(k in th.kinds, f"must 의 {k} 는 모르는 종류다")
         for w in words if k in th.kinds else []:
@@ -4469,6 +4472,10 @@ def selftest(th):
         quiet_doc = '기간은 2020–2024 년이다. 예문 "셋이다" 와 `—` 는 쓰지 않는다.\n```\n원인은 넷이다 — 코드다\n```\n'
         check(not [n for n, _, _ in tells_found(th, quiet_doc, neutral) if th.tells[n]["layer"] == "error"],
               "숫자 범위나 따옴표, 코드 블록 안의 예문을 문장 규칙으로 잡는다")
+        commas = "자료를 모았는데, 표본이 작았다. 기간을 늘렸지만, 차이는 그대로였다. 시간대를 나눴다. 요일을 나눴다. 노선을 나눴다. 결과를 적었다.\n"
+        check("comma" in {n for n, *_ in suggest_doc(th, commas, neutral, "report")}
+              and "comma" not in {n for n, *_ in suggest_doc(th, commas, neutral, "abstract")},
+              "연결어미 뒤 쉼표 문턱을 종류마다 다르게 재지 않는다")
         tips = {n for n, *_ in suggest_doc(th, "속도가 아니라 방향이다. 양이 아니라 질이다. 결론적으로 다양한 방법이 있다.", neutral)}
         check({"tells:not-but", "tells:wrapup", "tells:vague"} <= tips, f"제안 패턴이 다르다: {sorted(tips)}")
         tips = {n for n, *_ in suggest_doc(th, "1. `make run` 을 실행한다. 단, 8080 포트가 비어 있어야 한다.\n"

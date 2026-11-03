@@ -18,6 +18,7 @@ import importlib.util
 import json
 import math
 import os
+import random
 import re
 import shutil
 import statistics
@@ -319,7 +320,7 @@ def fetch_korea_press(want=30):
             name = re.sub(r"\s+-\s+보도자료\s*$", "", title.group(1).split("|")[0].strip() if title else "").replace("&quot;", '"')
             (out / f"{nid}.md").write_text(f"# {name}\n\n{body}\n", encoding="utf-8")
             (out / f"{nid}.json").write_text(json.dumps({
-                "kind": "notice", "label": "보도자료", "source": "korea-press", "date": day.group(1),
+                "kind": "press-release", "label": "보도자료", "source": "korea-press", "date": day.group(1),
                 "url": f"{KOREA}/briefing/pressReleaseView.do?newsId={nid}", "license": "공공누리 제1유형(출처표시), 정책브리핑",
                 "sha256": hashlib.sha256(f.read_bytes()).hexdigest()}, ensure_ascii=False), encoding="utf-8")
             got += 1
@@ -680,6 +681,42 @@ def noise_section(rows, keys):
     return out
 
 
+def comma_cut(xs):
+    """사람 글 90% 가 넘지 않는 값을 0.05 단위로 올린다. 0.2 밑으로는 내리지 않는다. defaults.yaml 의 comma 를 정한 방법이다."""
+    xs = sorted(xs)
+    return max(0.2, math.ceil(xs[min(len(xs) - 1, math.ceil(0.9 * len(xs)) - 1)] * 20 - 1e-9) / 20)
+
+
+def comma_section(rows):
+    """check 의 연결어미 쉼표 문턱을 종류별 사람 글에 대 본다. 반 나눠 잰 값은 한쪽 반으로 정한 문턱이 다른 반에 걸리는 비율이다."""
+    ok = lambda r: r["m"].get("connective_comma") is not None and r["m"].get("sentences", 0) >= 5
+    human_kind = {r["source"]: r["kind"] for r in rows if r["group"] == "human"}
+    lines = ["| 종류 | 사람 글 | 정한 문턱 | 다시 뽑은 문턱 | 사람 글이 0.2 에 닿음 | 정한 문턱에 닿음 | 반 나눠 잰 평균 | 끈 글 | 켠 글 | LLM 글 |",
+             "|---" * 10 + "|"]
+    rng = random.Random(1)
+    for kind in sorted({k for k in human_kind.values() if k in th.kinds}):
+        srcs = [s for s, k in human_kind.items() if k == kind]
+        h = [r["m"]["connective_comma"] for r in rows if r["group"] == "human" and r["source"] in srcs and ok(r)]
+        if len(h) < 10:
+            continue
+        cut, again = th.comma.get(kind, 0.2), comma_cut(h)
+        held = []
+        for _ in range(1000):
+            xs = h[:]
+            rng.shuffle(xs)
+            c = comma_cut(xs[:len(xs) // 2])
+            held.append(sum(x >= c for x in xs[len(xs) // 2:]) / (len(xs) - len(xs) // 2))
+        rate = lambda xs: f"{sum(x >= 0.2 for x in xs) / len(xs):.0%}→{sum(x >= cut for x in xs) / len(xs):.0%} ({len(xs)}편)" if xs else ""
+        side = lambda grp: [r["m"]["connective_comma"] for r in rows if r["group"] == grp and ok(r) and (
+            r["source"] in srcs if grp == "llm" else r.get("pair") and r["pair"]["source"] in srcs and "repeat" not in r["source"])]
+        lines.append(f"| {kind} | {len(h)}편 | {cut:g} | {again:g}{'' if again == cut else ' (다름)'} | "
+                     f"{sum(x >= 0.2 for x in h) / len(h):.0%} | {sum(x >= cut for x in h) / len(h):.0%} | {statistics.mean(held):.0%} | "
+                     f"{rate(side('off'))} | {rate(side('on'))} | {rate(side('llm'))} |")
+    return ["### 연결어미 뒤 쉼표 문턱\n\ncheck 는 연결어미 뒤 쉼표가 든 문장의 비율이 문턱에 닿으면 △ 로 보인다. 문턱은 `defaults.yaml` 의 `comma` 에 있고, "
+            "적지 않은 종류는 0.2 다. 다시 뽑은 문턱은 지금 모은 사람 글로 같은 방법을 다시 돌린 값이고, 정한 문턱과 다르면 데이터가 늘어 바뀐 것이다. "
+            "끈 글과 켠 글, LLM 글 칸은 0.2 일 때와 정한 문턱일 때 닿는 비율이다.\n\n" + "\n".join(lines) + "\n"]
+
+
 def composed_kind(row):
     argv = row.get("compose")
     if argv is None:
@@ -813,6 +850,7 @@ def cmd_report(a):
                 lines.append(f"| {name} | {len(v)} | {sum(r['suspect'] for r in v) / len(v):.1%} |")
     out.append("### 문체 배우기가 AI 글로 의심하는 비율\n\n`learn` 은 AI 표지가 두 가지 넘게 걸린 샘플을 AI 글로 의심해 제안에서 뺀다. "
                "사람 글 줄은 잘못 의심하는 비율이다.\n\n" + "\n".join(lines) + "\n")
+    out += comma_section(rows)
     gec = DATA / "raw" / "gec" / "val.jsonl"
     if gec.exists():
         pairs = [json.loads(x) for x in gec.read_text(encoding="utf-8").splitlines()]
