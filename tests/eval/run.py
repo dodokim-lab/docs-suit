@@ -111,7 +111,8 @@ def asks_only(reply):
     if any(ln.lstrip().startswith("#") for ln in lines):
         return False
     # 물음표 없이 "보내 주십시오" 로 자료를 달라고 되묻는 답도 질문이다. 동작 테스트와 같은 말로 가린다
-    if ar.ASK_META.search(body) and len(body) < 1500 and not suit.UNRESOLVED.search(body):
+    if ar.ASK_META.search(body) and ar.ASK_WORDS.search(body) and len(body) < 1500 and not ar.DRAFT_SHAPE.search(body) \
+            and not suit.UNRESOLVED.search(body):
         return True
     asked = sum(1 for ln in lines if "?" in ln) / len(lines)
     return (asked >= 0.4 and len(lines) >= 3) or (len(body) < 300 and bool(re.search(r"(?:쓰|작성하|써 드리|정리해 드리|만들어 드리)겠", body)))
