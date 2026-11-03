@@ -1240,7 +1240,7 @@ def judge_section():
         answers = {k: v for k, v in judge_answers(folder).items() if k in key}
         other = {"A": "B", "B": "A"}
         on_letter = lambda j: "A" if key[j]["A"] == "on" else "B"
-        # 판정한 뒤 요청을 고쳐 다시 쓴 글의 쌍은 결과에서 뺀다. 같은 이름으로 다시 썼을 수 있어 판정 때 본 글과 견준다
+        # 판정한 뒤 다시 쓴 글의 쌍은 결과에서 뺀다. 같은 이름으로 다시 썼을 수 있어 판정 때 본 글과 견준다
         same = lambda j, mode, letter: (DATA / key[j][mode]).exists() and strip_count((DATA / key[j][mode]).read_text(encoding="utf-8")) == strip_count(items[j][letter])
         stale = [j for j in answers if not (same(j, "on", on_letter(j)) and same(j, "off", other[on_letter(j)]))]
         dropped = sorted({key[j]["source"] for j in stale})
@@ -1295,8 +1295,8 @@ def judge_section():
                     + ("이고, 글마다 묻는 물음의 p 는 두 글의 답이 갈린 쌍만 센 부호 시험이다." if eaches else "이다.")
                     + " 출처는 문서 종류다. 지어낸 사실은 사람에게 묻지 않고 케이스 묶음 절의 요청에 없던 숫자로 잰다.")
         if stale:
-            note += (f" {', '.join(dropped)} 의 {len(stale)}쌍은 판정한 뒤 요청을 고쳐 글을 다시 써서 결과에서 뺐다."
-                     " 다시 쓴 글은 짝 묶음 절에서 수치로만 견준다.")
+            note += (f" {', '.join(dropped)} 의 {len(stale)}쌍은 판정한 뒤 요청이나 채점기를 고쳐 글을 다시 써서 결과에서 뺐다."
+                     " 다시 쓴 글은 수치로만 견준다.")
         out.append(f"### 사람 쌍대 비교 {folder.name}\n\n{note}\n\n" + "\n\n".join(parts) + "\n")
     return out
 
