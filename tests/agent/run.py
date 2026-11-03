@@ -288,11 +288,19 @@ def wrote_first(calls):
     return any(c[:1] == ["check"] for c in calls)
 
 
+# 쓰기 전에 사용자에게 자료를 달라고 되묻는 말. 물음표 없이 "보내 주십시오" 로 묻는 답도 질문으로 본다
+# 초안 끝의 "알려 주시면 반영해 드리겠습니다" 같은 맺음말이나 본문의 "정보가 부족하다" 는 걸리지 않게, 쓰기 전에 되묻는 말만 둔다
+ASK_META = re.compile(r"먼저 여쭤|먼저 여쭙|먼저 받아야|지어 쓰지 않|지어 쓸 수 (?:도 )?없|지어낼 수 없|지어내지 않으려|"
+                      r"(?:작성하|쓰)려면 (?:다음|아래)|(?:알려|보내) 주시면 (?:초안|작성|쓰|써)")
+
+
 def only_asks(reply):
     """질문만 하고 멈춘 답인가. 질문이 여럿이고 본문의 [확인 필요] 표시가 없으면 질문만 하고 멈춘 것이다.
-    요청 표현이 한 번뿐이어도 답이 짧으면 자료를 달라고 하고 멈춘 것이다. "보내 주시면 쓰겠습니다" 같은 꼴이다."""
+    요청 표현이 한 번뿐이어도 답이 짧으면 자료를 달라고 하고 멈춘 것이다. "보내 주시면 쓰겠습니다" 같은 꼴이다.
+    제목이 없는 1500자 안쪽 답이 자료를 달라고 되물으면 굵은 번호 목록으로 물어도 질문으로 본다."""
     asks = len(re.findall(r"\?|주세요|여쭤|여쭙|주시면", reply))
-    return not suit.UNRESOLVED.search(reply) and (asks >= 2 or (asks and len(reply) < 400))
+    asked_back = ASK_META.search(reply) and not re.search(r"^#", reply, re.M) and len(reply) < 1500
+    return not suit.UNRESOLVED.search(reply) and (asks >= 2 or (asks and len(reply) < 400) or bool(asked_back))
 
 
 # 케이스가 작업 폴더에 두는 에이전트 지침 파일. 에이전트가 쓴 본문이 아니다.

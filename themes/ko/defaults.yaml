@@ -85,7 +85,7 @@ prefer:
   interview: {register: polite, length: brief, markup: plain}
   abstract: {length: brief, terms: major}
   proposal: {length: full, sources: apa}
-  design-doc: {diagram: mermaid, terms: major}
+  design-doc: {diagram: mermaid, terms: major, length: full}
   pr: {voice: bullet, length: brief, terms: major}
   postmortem: {length: full}
   spec: {diagram: table}
