@@ -1559,6 +1559,13 @@ NUMERAL = re.compile(r"\d|(?<![가-힣])(?:하나|한|둘|두|셋|세|넷|네|�
                      r"이틀|사흘|나흘|닷새|엿새|이레|열흘|절반|반)(?![가-힣])")
 
 
+# 따옴표 없이 든 예에서 볼 수 세는 말. "한, 두, 세, 네, 반, 만" 은 다른 뜻으로 흔해서 뺀다
+COUNT_WORD = re.compile(r"(?<![가-힣])(?:하나|둘|셋|넷|다섯|여섯|일곱|여덟|아홉|열|스물|서른|마흔|쉰|이틀|사흘|나흘|닷새|엿새|"
+                        r"이레|열흘|절반)[은는이가을를에의도와과로]?(?= )")
+COUNT_IDIOM = {"둘 다", "둘 중", "하나 더", "하나 중"}
+PARTICLE_TAIL = re.compile(r"(?:처럼|까지|부터|보다|으로|에서|이라|은|는|이|가|을|를|에|의|도|와|과|로|만)$")
+
+
 def voice_overlap(voice, samples):
     """내 문체 문서가 샘플에서 그대로 옮긴 내용. 버릇을 가리키는 짧은 말("다만", "다음에 할 일")은 샘플과 겹쳐도 된다.
     숫자나 수를 세는 말이 든 예와, 네 어절 넘게 그대로 옮긴 문장은 샘플의 내용이 새는 길이라 잡는다."""
@@ -1567,6 +1574,16 @@ def voice_overlap(voice, samples):
     quoted = [flat(next(g for g in m.groups() if g)) for m in VOICE_QUOTE.finditer(voice)]
     cands = [q for q in quoted if NUMERAL.search(q) or len(q.split()) >= 4]
     cands += [w.strip(".,()[]`*\"'“”‘’") for w in voice.split() if re.search(r"\d", w)]
+    # 따옴표 없이 "서른 건, 열에 하나처럼" 으로 든 예도 수 세는 말과 바로 뒤 어절이 샘플에 그대로 있으면 잡는다
+    bare = flat(VOICE_QUOTE.sub(" ", voice))
+    for m in COUNT_WORD.finditer(bare):
+        nxt = re.match(r" (\S+)", bare[m.end():])
+        word = nxt.group(1).strip(".,;:()[]`*\"'“”‘’") if nxt else ""
+        for w in dict.fromkeys([word, PARTICLE_TAIL.sub("", word)]):
+            c = f"{m.group(0)} {w}"
+            if w and c not in COUNT_IDIOM and any(c in x for x in pool):
+                cands.append(c)
+                break
     out = []
     for c in cands:
         c = flat(c)
@@ -5034,6 +5051,9 @@ def selftest(th):
     check(mixed["register"]["value"] is None and "by_sample" in mixed["register"], "어법이 다른 샘플을 한 값으로 합쳤다")
     check(voice_overlap('- 수는 "열에 하나" 처럼 쓴다.\n- 결론을 먼저 쓴다. 12분 같은 수치를 붙인다.', ["기록은 열에\n하나 정도였다. 평균 12분이었다."])
           == ["열에 하나", "12분"] and voice_overlap('- "결론으로 연다".', ["다른 글"]) == []
+          and voice_overlap("- 사흘, 서른 건, 열에 하나처럼 수를 세는 말은 한글로 풀어 쓴다.",
+                            ["고친 기록이 서른 건을 넘었다.", "저녁 기록은 전체의 열에 하나 정도였다."]) == ["서른 건", "열에 하나"]
+          and voice_overlap("- 둘 다 쓰고, 하나 더 붙인다. 열 가지를 센다.", ["둘 다 좋았다. 하나 더 했다. 다섯 가지였다."]) == []
           and voice_overlap('- "다만" 과 "제가 맡겠습니다", "다음에 할 일" 을 쓴다.', ["다만 제가 맡겠습니다. 다음에 할 일"]) == [],
           "내 문체 문서가 샘플에서 옮긴 문구와 수치를 잡지 못한다")
     check(clean_voice(th, "# 내 문체\n\n## 보기\n- 결론으로 연다.") == "### 보기\n- 결론으로 연다.",
