@@ -843,7 +843,7 @@ def rule_sections(th, kind, vals, chars=None, revise=False, voice=None, words=No
         if axis == "length" and chars:
             out.append((f"글자수 · 공백 포함 {chars}자 이내",
                         f"- 본문은 공백 포함 {chars}자를 넘기지 않는다. 넘치면 근거가 약한 문장부터 뺀다.\n"
-                        "- 다 쓴 뒤 끝에 `(공백 포함 n자)` 로 센 값을 적는다.\n"
+                        "- 글자수는 본문에 적지 않는다. 알릴 때는 본문이 끝난 뒤 답에 따로 적는다.\n"
                         "- AI 가 센 글자수는 틀리기 쉽다. 제출 전에 글자수 세기 도구로 다시 잰다."))
     if voice:
         out.append(("내 문체", f"{VOICE_HEAD}\n\n{voice}"))
@@ -4498,6 +4498,13 @@ def selftest(th):
         got = {k: ok for k, ok, _ in check_doc("**제목**\n\n| 시간 | 대기 |\n", resolve(th, kind="email")[0], None, "email", th)}
         check(got.get("markup") is False and got.get("tells") is True and "emphasis" not in got,
               f"서식 없음 문서의 마크다운을 잡지 못하거나 굵은 글씨를 두 번 센다: {got}")
+        # 글자수는 답에 따로 적는다. 본문 끝에 따로 적은 줄만 잡고, 문장 안에서 분량을 말한 괄호는 두지 않는다
+        body = "지원 동기는 공백 포함 500자 안쪽으로 쓴다. 지원 동기(공백 포함 500자)는 따로 쓴다.\n"
+        cv = resolve(th, kind="cover-letter")[0]
+        got = {k: ok for k, ok, _ in check_doc(body, cv, None, "cover-letter", th)}
+        check(got.get("tells") is True, f"문장 안의 분량 괄호를 본문 속 글자수로 잡는다: {got}")
+        got = {k: ok for k, ok, _ in check_doc(body + "\n(공백 포함 61자)\n", cv, None, "cover-letter", th)}
+        check(got.get("tells:countline") is False, f"본문 끝에 적은 글자수 줄을 잡지 못한다: {got}")
         got = dict((k, (ok, v)) for k, ok, v in check_doc("목표를 정한다.\n", resolve(th, kind="design-doc")[0], None,
                                                            "design-doc", th))
         check(got.get("kind", (True, ""))[0] is False and "비목표" in got["kind"][1], f"틀이 정한 절이 빠진 것을 잡지 못한다: {got}")
