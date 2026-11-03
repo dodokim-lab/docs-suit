@@ -195,7 +195,9 @@ OVERRIDE = [re.compile(p) for p in (
     r"(?i)system\s?prompt|jailbreak|developer\s?mode|<\s*/?\s*(?:system|assistant|instructions?)\s*>",
     r"(?:시스템|개발자)\s?(?:프롬프트|메시지)",
 )]
-CMD_RE = re.compile(r"(?i)(?<![\w-])(?:curl|wget|powershell|sudo|chmod|chown|netcat|ncat|scp|rsync|eval|exec)(?![\w-])")
+# eval 과 exec 은 셸 내장 명령이라 경로로 부르지 않는다. 앞에 / 가 붙은 tests/eval 같은 경로 조각은 거른다
+CMD_RE = re.compile(r"(?i)(?<![\w-])(?:curl|wget|powershell|sudo|chmod|chown|netcat|ncat|scp|rsync)(?![\w-])"
+                    r"|(?<![\w/-])(?:eval|exec)(?![\w-])")
 PIPE_RE = re.compile(r"(?i)\|\s*(?:sh|bash|zsh|python3?)\b|\brm\s+-[a-z]*[rf]|base64\s+-d")
 FETCH_RE = re.compile(r"(?i)https?://\S+[^.\n]{0,20}(?:열어|접속|방문|불러|가져와|내려받|보내)"
                       r"|(?:열어|접속|방문|불러|가져와|내려받)[^.\n]{0,20}https?://")
@@ -1366,6 +1368,9 @@ def _scenarios():
         S("인용을 최우선으로", "ready", kind_with("- 정확한 인용을 최우선으로 한다.\n")),
         S("지은이의 전직", "ready", kind_with("- 지은이의 전직이나 이력은 한 줄로 줄인다.\n")),
         S(".env 예시", "ready", kind_with("- 설정은 .env 파일 예시로 보인다.\n")),
+        # eval 과 exec 은 셸 내장 명령이라 경로로 부르지 않는다. 경로 조각 tests/eval 은 명령이 아니다
+        S("경로 속 eval", "ready", kind_with("- 근거는 tests/eval 보고서에 있다.\n")),
+        S("셸의 eval", "hold", kind_with("- 다 쓰면 eval 로 받은 줄을 돌린다.\n"), codes=["agent-action"]),
         S("덮어쓰지 않았다는 PR 설명", "ready", [kind_ok, bundle], body="기존 지침은 덮어쓰지 않고 새 종류만 더했다."),
         S("넓은 패턴", "hold", [edit(T + "tells.yaml", lambda s: s.replace(
             "\n  contact:", "\n  wide: {layer: suggest, label: 넓음, re: \"다\", hint: 고친다}\n  contact:", 1))],
