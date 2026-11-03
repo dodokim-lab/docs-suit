@@ -1244,6 +1244,7 @@ def judge_section():
         same = lambda j, mode, letter: (DATA / key[j][mode]).exists() and strip_count((DATA / key[j][mode]).read_text(encoding="utf-8")) == strip_count(items[j][letter])
         stale = [j for j in answers if not (same(j, "on", on_letter(j)) and same(j, "off", other[on_letter(j)]))]
         dropped = sorted({key[j]["source"] for j in stale})
+        judged = len(answers)
         answers = {j: a for j, a in answers.items() if j not in stale}
         if not answers:
             continue
@@ -1285,13 +1286,13 @@ def judge_section():
             parts.append("\n".join(by))
         if meta["set"] == "pairs":
             note = ("같은 요청으로 끄고, 켜고 쓴 글을 A 와 B 에 무작위로 놓고 사람이 골랐다. 판정자는 어느 쪽이 켠 글인지 모른다. "
-                    f"{len(answers)}/{len(key)}쌍을 골랐고, p 는 비슷을 뺀 부호 시험이다. "
+                    f"{judged}/{len(key)}쌍을 골랐고, p 는 비슷을 뺀 부호 시험이다. "
                     "켠 글은 모르는 사실을 `[확인 필요]` 로 비워 두어 이것만으로 켠 글을 알아볼 수도 있다. "
                     "그래서 출처별 표 끝에 켠 글에 이 표시가 있는 쌍과 없는 쌍을 나눠 보인다.")
         else:
             note = ("짧은 요청으로 끄고, 켜고 쓴 글을 A 와 B 에 무작위로 놓고, 요청을 함께 보이며 사람이 골랐다. "
                     "켠 글은 모두 모르는 사실을 `[확인 필요]` 로 비워 두어 판정자가 어느 쪽이 켠 글인지 알 수 있다. "
-                    f"{len(answers)}/{len(key)}쌍을 골랐다. 둘 중 고르는 물음의 p 는 비슷을 뺀 부호 시험"
+                    f"{judged}/{len(key)}쌍을 골랐다. 둘 중 고르는 물음의 p 는 비슷을 뺀 부호 시험"
                     + ("이고, 글마다 묻는 물음의 p 는 두 글의 답이 갈린 쌍만 센 부호 시험이다." if eaches else "이다.")
                     + " 출처는 문서 종류다. 지어낸 사실은 사람에게 묻지 않고 케이스 묶음 절의 요청에 없던 숫자로 잰다.")
         if stale:
