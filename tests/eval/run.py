@@ -16,6 +16,7 @@ import argparse
 import html
 import importlib.util
 import json
+import math
 import os
 import re
 import shutil
@@ -606,14 +607,45 @@ def vals(rows, key):
     return [r["m"][key] for r in rows if r["m"].get(key) is not None]
 
 
+def paired_p(a_rows, b_rows, key):
+    """같은 요청으로 쓴 두 글의 차이가 우연인지 잰다. 차이의 부호를 무작위로 뒤집는 부호 순위 시험의 양쪽 p 다.
+    차이가 0 인 짝은 빼고, 남은 짝이 여섯 쌍이 안 되면 재지 않는다. 열두 쌍까지는 모든 부호를 세고, 넘으면 정규 근사를 쓴다."""
+    a = {r["pair"]["id"]: r["m"].get(key) for r in a_rows}
+    d = [r["m"].get(key) - a[r["pair"]["id"]] for r in b_rows
+         if a.get(r["pair"]["id"]) is not None and r["m"].get(key) is not None]
+    d = [x for x in d if abs(x) > 1e-12]
+    if len(d) < 6:
+        return None
+    order = sorted(range(len(d)), key=lambda i: abs(d[i]))
+    ranks = [0.0] * len(d)
+    i = 0
+    while i < len(order):
+        j = i
+        while j + 1 < len(order) and abs(d[order[j + 1]]) == abs(d[order[i]]):
+            j += 1
+        for t in range(i, j + 1):
+            ranks[order[t]] = (i + j) / 2 + 1
+        i = j + 1
+    w = sum(r if x > 0 else -r for r, x in zip(ranks, d))
+    if len(d) <= 12:
+        hits = 0
+        for mask in range(1 << len(d)):
+            hits += abs(sum(r if mask >> k & 1 else -r for k, r in enumerate(ranks))) >= abs(w) - 1e-9
+        return hits / (1 << len(d))
+    return math.erfc(abs(w) / math.sqrt(sum(r * r for r in ranks)) / math.sqrt(2))
+
+
+P_CUT = 0.01  # 수치가 스물여섯 가지라 0.05 로 보면 우연히 한두 가지가 걸린다
+
+
 def med(xs):
     return statistics.median(xs) if xs else None
 
 
 def noise_section(rows, keys):
-    """같은 요청을 같은 판으로 두 번 쓴 글끼리 가르는 힘. 끈 글과 켠 글의 차이가 이보다 커야 docs-suit 의 효과로 본다."""
+    """같은 요청을 같은 판으로 두 번 쓴 글로 짝 시험을 검증한다. 다시 쓴 글끼리는 차이가 없으니 걸리면 잘못 잡은 것이다."""
     rep = [r for r in rows if r.get("pair") and "repeat" in r["source"]]
-    out = []
+    out, false_hits, tests = [], 0, 0
     for source in sorted({r["pair"]["source"] for r in rep}):
         ids = {r["pair"]["id"] for r in rep if r["pair"]["source"] == source}
         mine = [r for r in rows if r.get("pair") and r["pair"]["source"] == source and r["pair"]["id"] in ids]
@@ -624,19 +656,27 @@ def noise_section(rows, keys):
         on1 = [r for r in pick("on", False) if on_runs and r["source"] == on_runs[-1]]
         if not (off1 and off2 and on1 and on2):
             continue
-        lines = ["| 층 | 수치 | 끈 글↔끈 글 다시 | 켠 글↔켠 글 다시 | 끈 글↔켠 글 | 흔들림보다 큰가 |", "|---" * 6 + "|"]
+        lines = ["| 층 | 수치 | 끈 글↔끈 글 다시 | 켠 글↔켠 글 다시 | 끈 글↔켠 글 | 끈↔끈 다시 p | 켠↔켠 다시 p | 끈↔켠 p |", "|---" * 8 + "|"]
         big = []
         for k in sorted(keys, key=lambda k: LAYERS.index(LAYER.get(k, "가독성"))):
-            a = [auc(vals(x, k), vals(y, k)) for x, y in ((off1, off2), (on1, on2), (off1, on1))]
+            pairs = ((off1, off2), (on1, on2), (off1, on1))
+            a = [auc(vals(x, k), vals(y, k)) for x, y in pairs]
             if None in a:
                 continue
-            a = [max(x, 1 - x) for x in a]
-            real = a[2] >= max(a[0], a[1]) + 0.1
-            big += [LABEL.get(k, k)] if real else []
-            lines.append(f"| {LAYER.get(k, '가독성')} | {LABEL.get(k, k)} | {a[0]:.2f} | {a[1]:.2f} | {a[2]:.2f} | {'예' if real else ''} |")
-        out.append(f"### 실행 사이 흔들림 {source}\n\n같은 요청 {len(ids)}건을 같은 판으로 한 번 더 썼다. 다시 쓴 글끼리의 판별력이 흔들림이고, "
-                   f"끈 글과 켠 글의 판별력이 두 흔들림보다 0.1 넘게 크면 docs-suit 가 바꾼 것으로 본다. 그런 수치가 "
+            ps = [paired_p(x, y, k) for x, y in pairs]
+            for q in ps[:2]:
+                tests += q is not None
+                false_hits += q is not None and q < P_CUT
+            big += [LABEL.get(k, k)] if ps[2] is not None and ps[2] < P_CUT else []
+            lines.append(f"| {LAYER.get(k, '가독성')} | {LABEL.get(k, k)} | " + " | ".join(f"{max(x, 1 - x):.2f}" for x in a) + " | "
+                         + " | ".join("" if q is None else (f"**{q:.3f}**" if q < P_CUT else f"{q:.3f}") for q in ps) + " |")
+        out.append(f"### 실행 사이 흔들림 {source}\n\n같은 요청 {len(ids)}건을 같은 판으로 한 번 더 썼다. 다시 쓴 글끼리의 판별력이 흔들림이다. "
+                   f"p 는 같은 요청끼리 짝지은 부호 순위 시험이고, {P_CUT} 아래는 굵게 적는다. 끈 글과 켠 글이 이 기준으로 다른 수치가 "
                    f"{len(big)}가지 있다" + (f": {', '.join(big)}." if big else ".") + "\n\n" + "\n".join(lines) + "\n")
+    if tests:
+        out.insert(0, f"### 짝 시험이 우연을 잘못 잡는 비율\n\n다시 쓴 판끼리 잰 {tests}번 가운데 {false_hits}번이 p<{P_CUT} 로 걸렸다. "
+                      "다시 쓴 글끼리는 차이가 없어야 하니 이것이 짝 시험이 우연을 차이로 잘못 읽는 비율이다. "
+                      "짝 묶음 절의 \"우연보다 큰 차이\" 는 이 시험으로 센다.\n")
     return out
 
 
@@ -706,26 +746,34 @@ def cmd_report(a):
             groups["켠 글" if len(runs) == 1 else f"켠 글 {run}"] = [r for r in paired if r["group"] == "on" and r["source"] == run]
         last = list(groups)[-1]  # 견줌 문장은 가장 나중 판의 켠 글로 쓴다
         use = [k for k in keys if not (source.startswith("katfish") and k in ONE_LINE)]
-        closer, names = [], []
-        for k in CLOSER:
+        moved = [k for k in use if (lambda q: q is not None and q < P_CUT)(paired_p(groups["끈 글"], groups[last], k))]
+        toward, away = [], []
+        for k in [k for k in CLOSER if k in moved]:
             h, off, on = (med(vals(groups[n], k)) for n in ("사람 글", "끈 글", last))
-            if None not in (h, off, on) and off != on:
-                closer.append(abs(on - h) < abs(off - h))
-                names.append(LABEL.get(k, k) if closer[-1] else None)
+            if None not in (h, off, on):
+                (toward if abs(on - h) < abs(off - h) else away).append(LABEL.get(k, k))
         tells = [fmt(med(vals(groups[n], "ai_tells_per_1k"))) for n in ("사람 글", "끈 글", last)]
-        note = (f"사람 글의 사실만 뽑아 같은 문서를 끄고, 켜고 쓰게 했다. AI 티 층에서 끈 글과 켠 글의 중앙값이 다른 수치 "
-                f"{len(closer)}가지 가운데 {sum(closer)}가지에서 켠 글이 사람 글에 더 가깝다"
-                + (f": {', '.join(n for n in names if n)}." if any(names) else ".")
+        is_ = lambda xs: ", ".join(xs) + ("이다" if batchim(xs[-1]) else "다")
+        side = ""
+        if toward and away:
+            side = f" 그 가운데 AI 티 층에서 켠 글이 사람 글 쪽으로 간 수치는 {', '.join(toward)}, 멀어진 수치는 {is_(away)}."
+        elif toward or away:
+            side = f" 그 가운데 AI 티 층에서 켠 글이 사람 글{' 쪽으로 간' if toward else '에서 멀어진'} 수치는 {is_(toward or away)}."
+        note = ("사람 글의 사실만 뽑아 같은 문서를 끄고, 켜고 쓰게 했다. 같은 요청끼리 짝지은 시험에서 끈 글과 켠 글이 우연보다 크게 다른 수치가 "
+                + (f"{len(moved)}가지 있다: {', '.join(LABEL.get(k, k) for k in moved)}." if moved else "없다.") + side
                 + f" 1000자당 AI 버릇은 사람 글 {tells[0]}, 끈 글 {tells[1]}, 켠 글 {tells[2]}이다."
                 " 가독성 층은 사람 글과의 거리로 재지 않는다.")
         if source.startswith("katfish"):
             note += " KatFish 원문은 문단 구분 없이 한 줄이라 줄과 문단, 목록, 제목 수치는 견주지 않는다."
+        if any(composed_kind(r) == "script" for r in groups[last]):
+            note += (" 발표 원고 틀은 귀로 듣는 글이라 한 문장에 한 가지만 말하고 짧게 끊게 한다."
+                     " 쉼표와 품사 다양성이 사람 글에서 멀어진 것은 그 결과이고, 가독성이 사람 글 닮음보다 앞선다.")
         for n in [g for g in groups if g.startswith("켠 글")]:
             picked = Counter(composed_kind(r) for r in groups[n])
             if picked:
-                note += f" {n}이 고른 문서 종류는 " + ", ".join(f"{k} {c}편" for k, c in picked.most_common()) + "이다."
+                note += f" {n if n == '켠 글' else n + ' 판'}이 고른 문서 종류는 " + ", ".join(f"{k} {c}편" for k, c in picked.most_common()) + "이다."
         if len(runs) > 1:
-            note += f" 사람 글과의 견줌은 가장 나중 판인 {last}로 셌다."
+            note += f" 사람 글과의 견줌은 가장 나중 판인 {last} 판으로 셌다."
         out.append(table(f"짝 묶음 {source}: 사람 글과 끈 글, 켠 글", groups, use, note))
     out += noise_section(rows, keys)
     for source in sorted({r["source"] for r in rows if r["group"] == "human"}):
