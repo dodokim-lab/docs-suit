@@ -467,6 +467,13 @@ LABEL = {"chars": "글자 수", "lines_per_1k": "1000자당 줄", "blocks_per_1k
          "ai_tells_per_1k": "1000자당 AI 버릇", "spelling": "맞춤법 패턴", "spacing": "띄어쓰기 패턴",
          "pos2_distinct": "품사 2-gram 다양성", "pos3_distinct": "품사 3-gram 다양성",
          "holes_per_1k": "1000자당 [확인 필요]", "new_numbers": "요청에 없던 숫자"}
+# 수치의 층. 사람 글과 가까운지는 AI 티 층에서만 센다. 문장 길이와 문단 모양은 가독성 규칙이 정해서, 사람 글이
+# 길고 빽빽하게 쓰는 장르에서 사람 글과 멀어져도 나빠진 것으로 보지 않는다. AI 버릇은 적을수록 낫고 사람 글과의 거리로 재지 않는다
+LAYER = {"holes_per_1k": "내용", "new_numbers": "내용", "spelling": "표기", "spacing": "표기",
+         "sent_cv": "AI 티", "comma_per_sent": "AI 티", "comma_sents": "AI 티", "connective_comma": "AI 티",
+         "pos2_distinct": "AI 티", "pos3_distinct": "AI 티", "ai_tells_per_1k": "AI 버릇"}
+LAYERS = ("내용", "표기", "AI 버릇", "AI 티", "가독성")
+CLOSER = [k for k, v in LAYER.items() if v == "AI 티"]
 # KatFish 원문은 문단 구분 없이 한 줄이라 줄과 문단, 목록, 제목 수치를 견주지 않는다
 ONE_LINE = ("lines_per_1k", "blocks_per_1k", "paras", "para_sents", "para_chars", "one_sent_paras",
             "list_share", "table_share", "heading_share", "chars_per_heading")
@@ -507,16 +514,16 @@ def table(title, groups, keys, note=""):
     """묶음마다 중앙값을 놓고, 첫 묶음과 나머지 묶음을 가르는 힘을 붙인다."""
     names = list(groups)
     head = f"### {title}\n\n" + (note + "\n\n" if note else "")
-    head += "| 수치 | " + " | ".join(f"{n} 중앙값 ({len(groups[n])}편)" for n in names) + " | " + \
+    head += "| 층 | 수치 | " + " | ".join(f"{n} 중앙값 ({len(groups[n])}편)" for n in names) + " | " + \
         " | ".join(f"{names[0]}↔{n} 판별력" for n in names[1:]) + " |\n"
-    head += "|---" * (1 + len(names) * 2 - 1) + "|\n"
+    head += "|---" * (2 + len(names) * 2 - 1) + "|\n"
     lines = []
-    for k in keys:
+    for k in sorted(keys, key=lambda k: LAYERS.index(LAYER.get(k, "가독성"))):
         cols = [vals(groups[n], k) for n in names]
         if not any(cols):
             continue
         aucs = [auc(cols[0], c) for c in cols[1:]]
-        lines.append(f"| {LABEL.get(k, k)} | " + " | ".join(fmt(med(c)) for c in cols) + " | " +
+        lines.append(f"| {LAYER.get(k, '가독성')} | {LABEL.get(k, k)} | " + " | ".join(fmt(med(c)) for c in cols) + " | " +
                      " | ".join("" if x is None else f"{max(x, 1 - x):.2f}" for x in aucs) + " |")
     return head + "\n".join(lines) + "\n"
 
@@ -547,13 +554,17 @@ def cmd_report(a):
                   "끈 글": [r for r in paired if r["group"] == "off"], "켠 글": [r for r in paired if r["group"] == "on"]}
         use = [k for k in keys if not (source.startswith("katfish") and k in ONE_LINE)]
         closer, names = [], []
-        for k in use:
+        for k in CLOSER:
             h, off, on = (med(vals(groups[n], k)) for n in groups)
             if None not in (h, off, on) and off != on:
                 closer.append(abs(on - h) < abs(off - h))
                 names.append(LABEL.get(k, k) if closer[-1] else None)
-        note = (f"사람 글의 사실만 뽑아 같은 문서를 끄고, 켜고 쓰게 했다. 끈 글과 켠 글의 중앙값이 다른 수치 {len(closer)}가지 가운데 "
-                f"{sum(closer)}가지에서 켠 글이 사람 글에 더 가깝다: {', '.join(n for n in names if n)}.")
+        tells = [fmt(med(vals(groups[n], "ai_tells_per_1k"))) for n in groups]
+        note = (f"사람 글의 사실만 뽑아 같은 문서를 끄고, 켜고 쓰게 했다. AI 티 층에서 끈 글과 켠 글의 중앙값이 다른 수치 "
+                f"{len(closer)}가지 가운데 {sum(closer)}가지에서 켠 글이 사람 글에 더 가깝다"
+                + (f": {', '.join(n for n in names if n)}." if any(names) else ".")
+                + f" 1000자당 AI 버릇은 사람 글 {tells[0]}, 끈 글 {tells[1]}, 켠 글 {tells[2]}이다."
+                " 가독성 층은 사람 글과의 거리로 재지 않는다.")
         if source.startswith("katfish"):
             note += " KatFish 원문은 문단 구분 없이 한 줄이라 줄과 문단, 목록, 제목 수치는 견주지 않는다."
         picked = Counter(composed_kind(r) for r in groups["켠 글"])
