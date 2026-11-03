@@ -108,9 +108,12 @@
     $("confirm").showModal();
   }
 
+  const count = (name) => { if (window.dsCount) window.dsCount(name); }; // count.js 가 없거나 막혀도 화면은 그대로 돈다
+
   function go() {
     const { ai, raw } = pending;
     const a = AI[ai];
+    count(`try/send/${ai}${raw ? "-raw" : ""}`);
     const text = raw ? $("ask").value.trim() : withRules();
     $("confirm").close();
     if (a.copy) copy(text, "요청을 복사했습니다. 열린 Gemini 입력창에 붙여 넣고 보내세요.");
@@ -134,13 +137,14 @@
 
   function wire() {
     $("classes").addEventListener("click", (e) => { const b = e.target.closest("[data-cls]"); if (b) pickClass(b.dataset.cls); });
-    $("trials").addEventListener("click", (e) => { const b = e.target.closest("[data-trial]"); if (b) pick(b.dataset.trial); });
+    $("trials").addEventListener("click", (e) => { const b = e.target.closest("[data-trial]"); if (b) { pick(b.dataset.trial); count(`try/template/${b.dataset.trial}`); } });
     $("ask").addEventListener("input", summary);
     $("reset").addEventListener("click", () => pick(state.trial));
     document.querySelectorAll("[data-ai]").forEach((b) => b.addEventListener("click", () => ask(b.dataset.ai, b.dataset.raw === "1")));
     $("cfmYes").addEventListener("click", go);
     $("cfmNo").addEventListener("click", () => $("confirm").close());
-    $("copy").addEventListener("click", () => { if (!empty()) copy(withRules(), "지침을 붙인 요청을 복사했습니다. 쓰는 AI 의 입력창에 붙여 넣으세요."); });
+    $("copy").addEventListener("click", () => { if (!empty()) { copy(withRules(), "지침을 붙인 요청을 복사했습니다. 쓰는 AI 의 입력창에 붙여 넣으세요."); count("try/copy"); } });
+    $("install").addEventListener("click", () => count("try/install"));
   }
 
   fetch("themes.json" + ((m) => (m ? `?v=${m.content}` : ""))(document.querySelector('meta[name="docs-suit-data"]'))).then((r) => r.json()).then((data) => {
