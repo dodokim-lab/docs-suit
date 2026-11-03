@@ -1232,6 +1232,9 @@ CHECK_LABEL = {"markup": "출력 형식", "kind": "문서 종류의 틀", "tells
 QUOTED = re.compile(r'"[^"\n]*"|“[^”\n]*”|「[^」\n]*」|‘[^’\n]*’|\'[^\'\n]*\'|`[^`\n]*`')
 CONNECTIVE_COMMA = re.compile(r"(?:지만|면서|며|는데|아서|어서|라서|니까|므로|[하되있없았었였겠]고),")
 CHOPPY_SKIP = ("slides", "sns", "resume", "interview", "script")  # 원래 짧게 끊어 쓰는 종류
+# 문체 배우기는 샘플의 종류를 몰라 check 의 종류별 문턱을 쓰지 못한다. 0.2 로 재면 사람이 쓴 환자 안내문의 16.7% 를 AI 글로
+# 의심해서 0.3 으로 둔다. 예전 LLM 논설문을 잡는 비율은 52.5% 에서 38.8% 로 내려가고, 지금의 Claude 글은 거의 그대로다
+LEARN_COMMA = 0.3
 
 
 def plain_text(doc):
@@ -1512,7 +1515,7 @@ def learn_sample(th, name, text, is_doc):
     flat = [x for r in sentences(text) for x in r]
     if len(flat) >= 5:
         k = sum(1 for x in flat if CONNECTIVE_COMMA.search(x))
-        if k / len(flat) >= 0.2:
+        if k / len(flat) >= LEARN_COMMA:
             out["ai"].append(f"연결어미 뒤 쉼표 문장 {k}/{len(flat)}")
     out["suspect"] = len(out["ai"]) >= 2
     return out
@@ -5007,6 +5010,10 @@ def selftest(th):
     check([x["register"] for x in got[:3]] == ["polite"] * 3 and got[0]["voice"] == "bullet" and not got[0]["suspect"],
           "샘플의 어법이나 문체를 재지 못한다")
     check(got[3]["suspect"], "AI 글의 표지가 많은 샘플을 가려내지 못한다")
+    commas = "자료를 모았는데, 표본이 작았다. 기간을 늘렸지만, 차이는 그대로였다. 시간대를 나눴다. 요일을 나눴다. 노선을 나눴다. 결과를 적었다. 표를 그렸다.\n"
+    check(not [x for x in learn_sample(th, "c", commas, False)["ai"] if x.startswith("연결어미")]
+          and [x for x in learn_sample(th, "c", commas.replace("나눴다. 요일", "나눴는데, 요일"), False)["ai"] if x.startswith("연결어미")],
+          "문체 배우기의 연결어미 쉼표 표지가 0.3 에서 갈리지 않는다")
     plan, voice_ok, _ = learn_plan(got)
     check(plan.get("register", {}).get("value") == "polite" and plan.get("emphasis", {}).get("value") == "none"
           and not voice_ok, f"샘플에서 제안한 축 값이 다르거나, 짧은 샘플로 내 문체 문서를 권했다: {plan}")
