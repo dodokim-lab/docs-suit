@@ -149,7 +149,7 @@ def write_one(agent, item, base, model, on):
         (tmp / "transcript-2.jsonl").write_text(out2, encoding="utf-8")
         cost += ar.AGENTS[agent]["meta"](out2)["cost"]
     meta = {"id": item["id"], "kind": item["kind"], "mode": "on" if on else "off", "agent": agent,
-            "model": first["model"], "cost": round(cost, 4), "sec": round(time.time() - t0),
+            "model": first["model"] or model or "", "cost": round(cost, 4), "sec": round(time.time() - t0),
             "followup": (tmp / "transcript-2.jsonl").exists(),
             "set": "pairs" if item.get("pair") else "cases", "pair": item.get("pair")}
     if on:
@@ -186,7 +186,7 @@ def cmd_gen(a):
             return f"건너뜀 {mode}/{item['id']}: 사용료 상한"
         shutil.rmtree(work / mode / item["id"], ignore_errors=True)
         (work / mode).mkdir(parents=True, exist_ok=True)
-        doc, meta = write_one(a.agent, item, work / mode, a.model, mode == "on")
+        doc, meta = write_one(a.agent, item, work / mode, a.model or ("sonnet" if a.agent == "claude" else None), mode == "on")
         pay(meta["cost"], f"{run}/{mode}/{item['id']}")
         (out / mode).mkdir(parents=True, exist_ok=True)
         (out / mode / f"{item['id']}.json").write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
@@ -565,6 +565,7 @@ def cmd_measure(a):
         hits = {k: v for k, v in suit.tell_hits(th, doc, meta.get("kind")).items() if v}
         shown = [n for n, *_ in suit.tells_found(th, doc, {}, meta.get("kind"))]
         rows.append({"group": group, "source": source, "id": f.stem, "kind": meta.get("kind"), "m": m,
+                     "agent": meta.get("agent", "claude") if group in ("on", "off") else None, "model": meta.get("model", ""),
                      "tells": hits, "shown": shown, "set": meta.get("set", "cases"), "pair": meta.get("pair"),
                      "compose": meta.get("compose"), "suspect": suit.learn_sample(th, f.stem, doc, False)["suspect"]})
     (DATA / "measures.jsonl").write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8")
@@ -750,8 +751,54 @@ def table(title, groups, keys, note=""):
     return head + "\n".join(lines) + "\n"
 
 
+def model_name(r):
+    return r.get("model") or r.get("agent") or ""
+
+
+def other_models(rows):
+    """Claude 밖의 에이전트로 쓴 글의 모델 이름. 같은 에이전트라도 모델이 다르면 따로 견준다."""
+    return sorted({model_name(r) for r in rows if r["group"] in ("on", "off") and r.get("agent", "claude") != "claude"})
+
+
+def other_agent_sections(rows, keys):
+    """Claude 밖의 에이전트로 쓴 글을 모델마다 견준다. 짝 묶음은 출처를 모두 모아 같은 요청끼리 짝짓는다.
+    출처마다 나누면 묶음이 작아 짝 시험이 아무것도 잡지 못해서다."""
+    out = []
+    for name in other_models(rows):
+        mine = [r for r in rows if r["group"] in ("on", "off") and r.get("agent", "claude") != "claude" and model_name(r) == name]
+        cases = [r for r in mine if r["set"] == "cases"]
+        if cases:
+            out.append(table(f"{name} 케이스 묶음: 끈 글과 켠 글", {"끈 글": [r for r in cases if r["group"] == "off"],
+                                                              "켠 글": [r for r in cases if r["group"] == "on"]}, keys,
+                             f"같은 요청을 {name} 가 docs-suit 를 끄고, 켜고 쓴 글이다."))
+        paired = [r for r in mine if r.get("pair")]
+        both = {r["pair"]["id"] for r in paired if r["group"] == "on"} & {r["pair"]["id"] for r in paired if r["group"] == "off"}
+        if not both:
+            continue
+        paired = [r for r in paired if r["pair"]["id"] in both]
+        want = {(r["pair"]["source"], r["pair"]["id"]) for r in paired}
+        srcs = sorted({s for s, _ in want})
+        groups = {"사람 글": [r for r in rows if r["group"] == "human" and (r["source"], r["id"]) in want],
+                  "끈 글": [r for r in paired if r["group"] == "off"], "켠 글": [r for r in paired if r["group"] == "on"]}
+        katfish = any(s.startswith("katfish") for s in srcs)
+        use = [k for k in keys if not (katfish and k in ONE_LINE)]
+        moved = [k for k in use if (lambda q: q is not None and q < P_CUT)(paired_p(groups["끈 글"], groups["켠 글"], k))]
+        tells = [fmt(med(vals(groups[n], "ai_tells_per_1k"))) for n in groups]
+        picked = Counter(composed_kind(r) for r in groups["켠 글"])
+        note = (f"짝 묶음 {len(srcs)}곳({', '.join(srcs)})의 요청 {len(both)}건을 {name} 가 끄고, 켜고 썼다. "
+                "같은 요청끼리 짝지은 시험에서 끈 글과 켠 글이 우연보다 크게 다른 수치가 "
+                + (f"{len(moved)}가지 있다: {', '.join(LABEL.get(k, k) for k in moved)}." if moved else "없다.")
+                + f" 1000자당 AI 버릇은 사람 글 {tells[0]}, 끈 글 {tells[1]}, 켠 글 {tells[2]}이다."
+                + (" KatFish 원문은 문단 구분 없이 한 줄이라 줄과 문단, 목록, 제목 수치는 견주지 않는다." if katfish else "")
+                + (" 켠 글이 고른 문서 종류는 " + ", ".join(f"{k} {c}편" for k, c in picked.most_common()) + "이다." if picked else ""))
+        out.append(table(f"{name} 짝 묶음: 사람 글과 끈 글, 켠 글", groups, use, note))
+    return out
+
+
 def cmd_report(a):
-    rows = [json.loads(x) for x in (DATA / "measures.jsonl").read_text(encoding="utf-8").splitlines()]
+    every = [json.loads(x) for x in (DATA / "measures.jsonl").read_text(encoding="utf-8").splitlines()]
+    # 끈 글과 켠 글의 절은 Claude 로 쓴 글만 쓰고, 다른 에이전트의 글은 모델마다 뒤에 따로 견준다
+    rows = [r for r in every if r["group"] in ("human", "llm") or r.get("agent", "claude") == "claude"]
     keys = [k for k in LABEL if any(k in r["m"] for r in rows)]
     by = lambda **kw: [r for r in rows if all(r[k] == v for k, v in kw.items())]
     out = [f"# 글 평가 보고서\n\n- 날짜: {date.today().isoformat()}\n- 잰 글: {len(rows)}편\n- 사용료 합: {spent():.2f}달러\n",
@@ -813,6 +860,7 @@ def cmd_report(a):
             note += f" 사람 글과의 견줌은 가장 나중 판인 {last} 판으로 셌다."
         out.append(table(f"짝 묶음 {source}: 사람 글과 끈 글, 켠 글", groups, use, note))
     out += noise_section(rows, keys)
+    out += other_agent_sections(every, keys)
     for source in sorted({r["source"] for r in rows if r["group"] == "human"}):
         tag = source.split("-", 1)[-1]
         llm = by(group="llm", source=f"{source}")
@@ -826,6 +874,8 @@ def cmd_report(a):
     human = [r for r in rows if r["group"] == "human"]
     sets = {"사람 글": human, "LLM 글": [r for r in rows if r["group"] == "llm"],
             "Claude 끈 글": [r for r in rows if r["group"] == "off"]}
+    for name in other_models(every):
+        sets[f"{name} 끈 글"] = [r for r in every if r["group"] == "off" and model_name(r) == name]
     sets = {k: v for k, v in sets.items() if v}
     if len(sets) > 1:
         per_k = lambda r, n: r.get("tells", {}).get(n, 0) * 1000 / max(r["m"]["chars"], 1)
@@ -838,7 +888,7 @@ def cmd_report(a):
                              + " | ".join(f"{x:.1%}" for x in shown) + " | "
                              + " | ".join(f"{statistics.mean(per_k(r, n) for r in v):.2f}" for v in sets.values()) + " |")
         out.append(f"### 문장 규칙 패턴별로 보인 비율\n\ncheck 가 그 패턴을 보이는 글의 비율이다. LLM 글은 연구 데이터의 글이고, "
-                   "Claude 끈 글은 docs-suit 없이 쓴 글이다. AI 표지가 아닌 패턴은 쉬운 말 규칙이라 사람 글에 보여도 잘못 건 것이 아니다. "
+                   "끈 글은 docs-suit 없이 쓴 글이다. AI 표지가 아닌 패턴은 쉬운 말 규칙이라 사람 글에 보여도 잘못 건 것이 아니다. "
                    "AI 표지인 패턴이 사람 글에 자주 보이면 잘못 거는 패턴이다.\n\n" + "\n".join(lines) + "\n")
     # 문체 배우기는 AI 표지가 두 가지 넘게 걸린 샘플을 AI 글로 의심해 제안에서 뺀다. 사람 글을 의심하면 그 글에서 배우지 못한다
     lines = ["| 묶음 | 글 | AI 글로 의심 |", "|---|---|---|"]
@@ -848,6 +898,11 @@ def cmd_report(a):
             if v:
                 name = {"human": "사람", "llm": "LLM", "off": "Claude 끈 글", "on": "Claude 켠 글"}[grp] + (f" {source}" if source else "")
                 lines.append(f"| {name} | {len(v)} | {sum(r['suspect'] for r in v) / len(v):.1%} |")
+    for name in other_models(every):
+        for grp, word in (("off", "끈 글"), ("on", "켠 글")):
+            v = [r for r in every if r["group"] == grp and model_name(r) == name and "suspect" in r]
+            if v:
+                lines.append(f"| {name} {word} | {len(v)} | {sum(r['suspect'] for r in v) / len(v):.1%} |")
     out.append("### 문체 배우기가 AI 글로 의심하는 비율\n\n`learn` 은 AI 표지가 두 가지 넘게 걸린 샘플을 AI 글로 의심해 제안에서 뺀다. "
                "사람 글 줄은 잘못 의심하는 비율이다.\n\n" + "\n".join(lines) + "\n")
     out += comma_section(rows)
@@ -950,7 +1005,7 @@ def md_html(text):
     return "\n".join(out)
 
 
-def judge_pairs():
+def judge_pairs(agent="claude"):
     """짝 묶음마다 끈 글은 처음 쓴 판, 켠 글은 가장 나중 판을 쓴다. 보고서의 짝 묶음 절과 같은 글이다. 다시 쓴 판은 뺀다."""
     asks = {r["id"]: r for r in map(json.loads, (DATA / "pairs.jsonl").read_text(encoding="utf-8").splitlines())}
     runs = sorted(d.name for d in (DATA / "gen").iterdir() if d.is_dir() and "repeat" not in d.name)
@@ -959,7 +1014,8 @@ def judge_pairs():
         for mode in ("off", "on"):
             for f in sorted((DATA / "gen" / run / mode).glob("*.md")):
                 meta = f.with_suffix(".json")
-                if f.stem in asks and meta.exists() and json.loads(meta.read_text(encoding="utf-8")).get("set") == "pairs":
+                info = json.loads(meta.read_text(encoding="utf-8")) if meta.exists() else {}
+                if f.stem in asks and info.get("set") == "pairs" and info.get("agent", "claude") == agent:
                     slot = found.setdefault(f.stem, {})
                     if mode == "on" or mode not in slot:  # 켠 글은 나중 판이 덮고, 끈 글은 처음 판을 둔다
                         slot[mode] = f
@@ -974,7 +1030,7 @@ def cmd_judge(a):
             sys.exit(f"{folder} 에 이미 만든 판정 묶음이 있다. 다시 만들려면 --redo")
         rng = random.Random(a.seed)
         by_source = {}
-        for item in judge_pairs():
+        for item in judge_pairs(a.agent):
             by_source.setdefault(item[1]["pair"]["source"], []).append(item)
         for v in by_source.values():
             rng.shuffle(v)
@@ -1153,7 +1209,7 @@ def main():
     g.add_argument("--set", default="cases", choices=("cases", "pairs"))
     g.add_argument("--mode", default="on,off")
     g.add_argument("--agent", default="claude", choices=list(ar.AGENTS))
-    g.add_argument("--model", default="sonnet")
+    g.add_argument("--model", help="에이전트에 넘길 모델. 주지 않으면 Claude 는 sonnet, 다른 에이전트는 그 기본값")
     g.add_argument("--only")
     g.add_argument("--run", help="기록 이름. 주지 않으면 날짜와 묶음 이름이다. 같은 이름이면 이미 쓴 글은 건너뛴다")
     g.add_argument("--redo", action="store_true", help="이미 쓴 글도 다시 쓴다")
@@ -1177,6 +1233,7 @@ def main():
     j.add_argument("--seed", type=int, default=1)
     j.add_argument("--port", type=int, default=0)
     j.add_argument("--redo", action="store_true")
+    j.add_argument("--agent", default="claude", help="이 에이전트로 쓴 끈 글과 켠 글에서 뽑는다")
     a = ap.parse_args()
     {"gen": cmd_gen, "fetch": cmd_fetch, "pairs": cmd_pairs, "measure": cmd_measure, "report": cmd_report,
      "judge": cmd_judge}[a.cmd](a)

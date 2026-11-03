@@ -140,7 +140,9 @@ def codex_meta(out):
 def codex_plan():
     """로그인한 ChatGPT 요금제. 토큰은 읽기만 하고 요금제 이름 말고는 꺼내지 않는다."""
     try:
-        auth = json.loads((Path.home() / ".codex" / "auth.json").read_text(encoding="utf-8"))
+        # CODEX_HOME 으로 다른 계정의 폴더를 주면 그 계정의 요금제를 읽는다
+        home = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+        auth = json.loads((home / "auth.json").read_text(encoding="utf-8"))
         payload = auth["tokens"]["id_token"].split(".")[1]
         claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
         return claims["https://api.openai.com/auth"]["chatgpt_plan_type"]
