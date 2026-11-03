@@ -4603,7 +4603,7 @@ def selftest(th):
               == [("tells", True, "걸린 것 없음")], "대화로 정한 축까지 본문 검사가 쟀다")
         # 평가 수치. 제목과 목록은 문장으로 세지 않고, 빈 줄로 나뉜 줄글 덩어리가 문단이다
         got = measure("# 제목\n\n첫 문장이다. 둘째 문장은 조금 더 길게 쓴다.\n\n- 목록 하나\n- 목록 둘\n\n"
-                      "쉼표가 있고, 끝난다. 다양한 방법을 쓴다.\n\n## 둘째 절\n\n한 문장 문단이다.\n", th)
+                      "쉼표가 있고, 끝난다. 요약하면 이걸 쓴다.\n\n## 둘째 절\n\n한 문장 문단이다.\n", th)
         check((got["sentences"], got["paras"], got["para_sents"], got["one_sent_paras"], got["comma_sents"],
                got["connective_comma"], got["sent_median"], got["chars_per_heading"]) == (5, 3, 1.67, 0.333, 0.2, 0.2, 11.0, 38.5)
               and got["ai_tells_per_1k"] > 0 and got["spelling"] == 0, f"평가 수치가 다르다: {got}")
