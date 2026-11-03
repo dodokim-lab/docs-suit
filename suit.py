@@ -4498,6 +4498,12 @@ def selftest(th):
         got = {k: ok for k, ok, _ in check_doc("**제목**\n\n| 시간 | 대기 |\n", resolve(th, kind="email")[0], None, "email", th)}
         check(got.get("markup") is False and got.get("tells") is True and "emphasis" not in got,
               f"서식 없음 문서의 마크다운을 잡지 못하거나 굵은 글씨를 두 번 센다: {got}")
+        # TL;DR 머리는 잡고, 백틱 안에서 이 말을 다루는 문장은 두지 않는다
+        rp = resolve(th, kind="blog")[0]
+        got = {k: ok for k, ok, _ in check_doc("## TL;DR\n\n캐시를 넣어 응답이 빨라졌다.\n", rp, None, "blog", th)}
+        check(got.get("tells:tldr") is False, f"TL;DR 머리를 잡지 못한다: {got}")
+        got = {k: ok for k, ok, _ in check_doc("글머리에 `TL;DR` 을 달지 않는다.\n", rp, None, "blog", th)}
+        check("tells:tldr" not in got, f"백틱 안의 TL;DR 을 잡는다: {got}")
         # 글자수는 답에 따로 적는다. 본문 끝에 따로 적은 줄만 잡고, 문장 안에서 분량을 말한 괄호는 두지 않는다
         body = "지원 동기는 공백 포함 500자 안쪽으로 쓴다. 지원 동기(공백 포함 500자)는 따로 쓴다.\n"
         cv = resolve(th, kind="cover-letter")[0]
