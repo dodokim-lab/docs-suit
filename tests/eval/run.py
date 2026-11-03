@@ -938,10 +938,25 @@ def cmd_report(a):
 
 
 # ---------------------------------------------------------------- 사람 쌍대 비교
-# 짝 묶음의 끈 글과 켠 글을 나란히 보이고 사람이 고른다. 어느 쪽이 켠 글인지는 key.json 에만 두고 화면에는 싣지 않는다
+# 같은 요청으로 끄고, 켜고 쓴 글을 나란히 보이고 사람이 고른다. 어느 쪽이 켠 글인지는 key.json 에만 두고 화면에는 싣지 않는다
 JUDGE = DATA / "judge"
-QUESTIONS = (("overall", "전체로 더 나은 글"), ("read", "더 읽기 쉬운 글"), ("structure", "구성(순서와 묶음, 제목)이 더 나은 글"),
-             ("ai", "AI 가 쓴 것 같은 글"))
+# 물음은 둘 중 하나를 고르는 것(pick)과 글마다 그렇다, 아니다로 답하는 것(each)이 있다.
+# 짝 묶음은 사실을 다 준 긴 요청이라 글솜씨를 묻고, 케이스 묶음은 짧은 요청이라 지어낸 사실과 초안의 쓸모를 묻는다
+QUESTIONS = {
+    "pairs": [["overall", "전체로 더 나은 글", "pick"], ["read", "더 읽기 쉬운 글", "pick"],
+              ["structure", "구성(순서와 묶음, 제목)이 더 나은 글", "pick"], ["ai", "AI 가 쓴 것 같은 글", "pick"]],
+    "cases": [["made", "요청에 없는 사실을 지어낸 곳이 있다", "each"], ["send", "빈칸만 채우면 그대로 보낼 수 있다", "each"],
+              ["start", "둘 중 이 초안으로 시작하겠다", "pick"]],
+}
+
+
+def judge_meta(folder):
+    """판정 묶음의 묶음 이름과 물음. meta.json 이 없는 첫 묶음은 짝 묶음의 물음을 썼다."""
+    f = folder / "meta.json"
+    meta = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
+    meta.setdefault("set", "pairs")
+    meta.setdefault("questions", QUESTIONS[meta["set"]])
+    return meta
 
 
 def md_html(text):
@@ -1014,9 +1029,15 @@ def md_html(text):
     return "\n".join(out)
 
 
-def judge_pairs(agent="claude"):
-    """짝 묶음마다 끈 글은 처음 쓴 판, 켠 글은 가장 나중 판을 쓴다. 보고서의 짝 묶음 절과 같은 글이다. 다시 쓴 판은 뺀다."""
-    asks = {r["id"]: r for r in map(json.loads, (DATA / "pairs.jsonl").read_text(encoding="utf-8").splitlines())}
+def judge_candidates(which, agent):
+    """판정에 쓸 (요청 이름, 요청, 출처, 끈 글, 켠 글). 끈 글은 처음 쓴 판, 켠 글은 가장 나중 판을 쓴다.
+    보고서와 같은 글이다. 다시 쓴 판은 뺀다. 케이스 묶음은 문서 종류를 출처로 본다."""
+    if which == "pairs":
+        asks = {r["id"]: r for r in map(json.loads, (DATA / "pairs.jsonl").read_text(encoding="utf-8").splitlines())}
+        source = lambda r: r["pair"]["source"]
+    else:
+        asks = {c["id"]: c for c in plain_cases()}
+        source = lambda r: r["kind"]
     runs = sorted(d.name for d in (DATA / "gen").iterdir() if d.is_dir() and "repeat" not in d.name)
     found = {}
     for run in runs:
@@ -1024,48 +1045,54 @@ def judge_pairs(agent="claude"):
             for f in sorted((DATA / "gen" / run / mode).glob("*.md")):
                 meta = f.with_suffix(".json")
                 info = json.loads(meta.read_text(encoding="utf-8")) if meta.exists() else {}
-                if f.stem in asks and info.get("set") == "pairs" and info.get("agent", "claude") == agent:
+                if f.stem in asks and info.get("set", "cases") == which and info.get("agent", "claude") == agent:
                     slot = found.setdefault(f.stem, {})
                     if mode == "on" or mode not in slot:  # 켠 글은 나중 판이 덮고, 끈 글은 처음 판을 둔다
                         slot[mode] = f
-    return [(pid, asks[pid], v["off"], v["on"]) for pid, v in sorted(found.items())
+    return [(pid, asks[pid], source(asks[pid]), v["off"], v["on"]) for pid, v in sorted(found.items())
             if "off" in v and "on" in v and v["off"].read_text(encoding="utf-8").strip() and v["on"].read_text(encoding="utf-8").strip()]
+
 
 
 def cmd_judge(a):
     folder = JUDGE / a.name
-    if a.action == "make":
-        if (folder / "key.json").exists() and not a.redo:
-            sys.exit(f"{folder} 에 이미 만든 판정 묶음이 있다. 다시 만들려면 --redo")
-        rng = random.Random(a.seed)
-        by_source = {}
-        for item in judge_pairs(a.agent):
-            by_source.setdefault(item[1]["pair"]["source"], []).append(item)
-        for v in by_source.values():
-            rng.shuffle(v)
-        picked, k = [], 0
-        while len(picked) < a.n and any(by_source.values()):  # 출처를 돌아가며 한 쌍씩 뽑는다
-            src = sorted(by_source)[k % len(by_source)]
-            if by_source[src]:
-                picked.append(by_source[src].pop())
-            k += 1
-        rng.shuffle(picked)
-        items, key = [], {}
-        for n, (pid, ask, off, on) in enumerate(picked, 1):
-            jid = f"j{n:02d}"
-            on_is_a = rng.random() < 0.5
-            text = lambda f: strip_count(f.read_text(encoding="utf-8"))
-            items.append({"id": jid, "kind": th.kinds.get(ask.get("kind"), {}).get("label", ""), "ask": ask["ask"],
-                          "A": text(on if on_is_a else off), "B": text(off if on_is_a else on)})
-            key[jid] = {"pair": pid, "source": ask["pair"]["source"], "A": "on" if on_is_a else "off",
-                        "on": str(on.relative_to(DATA)), "off": str(off.relative_to(DATA))}
-        folder.mkdir(parents=True, exist_ok=True)
-        (folder / "items.json").write_text(json.dumps(items, ensure_ascii=False), encoding="utf-8")
-        (folder / "key.json").write_text(json.dumps(key, ensure_ascii=False, indent=1), encoding="utf-8")
-        print(f"판정 묶음 {len(items)}쌍: {folder}. 출처별 " + ", ".join(f"{s} {c}" for s, c in Counter(v['source'] for v in key.values()).most_common()))
+    if a.action == "serve":
+        serve_judge(folder, json.loads((folder / "items.json").read_text(encoding="utf-8")), a.port)
         return
-    items = json.loads((folder / "items.json").read_text(encoding="utf-8"))
-    serve_judge(folder, items, a.port)
+    if (folder / "key.json").exists() and not a.redo:
+        sys.exit(f"{folder} 에 이미 만든 판정 묶음이 있다. 다시 만들려면 --redo")
+    rng = random.Random(a.seed)
+    by_source = {}
+    for item in judge_candidates(a.set, a.agent):
+        if not a.only or item[0] in a.only.split(","):
+            by_source.setdefault(item[2], []).append(item)
+    for v in by_source.values():
+        rng.shuffle(v)
+    picked, k = [], 0
+    while len(picked) < a.n and any(by_source.values()):  # 출처를 돌아가며 한 쌍씩 뽑는다
+        src = sorted(by_source)[k % len(by_source)]
+        if by_source[src]:
+            picked.append(by_source[src].pop())
+        k += 1
+    rng.shuffle(picked)
+    items, key = [], {}
+    text = lambda f: strip_count(f.read_text(encoding="utf-8"))
+    # 켠 글이 A 에 오는 쌍을 절반으로 맞춘다. 한쪽에 몰리면 판정자가 자리로 켠 글을 짐작할 수 있다
+    sides = [True] * (len(picked) // 2) + [False] * (len(picked) - len(picked) // 2)
+    rng.shuffle(sides)
+    for n, ((pid, ask, src, off, on), on_is_a) in enumerate(zip(picked, sides), 1):
+        jid = f"j{n:02d}"
+        items.append({"id": jid, "kind": th.kinds.get(ask.get("kind"), {}).get("label", ""), "ask": ask["ask"],
+                      "A": text(on if on_is_a else off), "B": text(off if on_is_a else on)})
+        key[jid] = {"pair": pid, "source": src, "A": "on" if on_is_a else "off",
+                    "on": str(on.relative_to(DATA)), "off": str(off.relative_to(DATA))}
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "items.json").write_text(json.dumps(items, ensure_ascii=False), encoding="utf-8")
+    (folder / "key.json").write_text(json.dumps(key, ensure_ascii=False, indent=1), encoding="utf-8")
+    (folder / "meta.json").write_text(json.dumps({"set": a.set, "agent": a.agent, "questions": QUESTIONS[a.set]},
+                                                 ensure_ascii=False), encoding="utf-8")
+    print(f"판정 묶음 {len(items)}쌍: {folder}. 출처별 " + ", ".join(f"{s} {c}" for s, c in Counter(v['source'] for v in key.values()).most_common()))
+
 
 
 def judge_answers(folder):
@@ -1100,10 +1127,17 @@ form{background:var(--card);border:1px solid var(--line);border-radius:8px;paddi
 textarea{width:100%;min-height:56px;margin-top:10px;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:8px;font:inherit}
 button{margin-top:10px;background:var(--accent);color:var(--card);border:0;border-radius:6px;padding:8px 20px;font:inherit;font-weight:700;cursor:pointer}
 .done{max-width:640px;margin:40px auto;text-align:center}
+.ask{background:var(--card);border:1px solid var(--accent);border-radius:8px;padding:10px 16px;margin-bottom:14px}.ask p{margin:4px 0 0;white-space:pre-wrap}
+.q em{font-style:normal;font-weight:700;color:var(--accent);margin-left:10px}
 """
 
 
-def judge_page(items, answers, i):
+def judge_fields(questions):
+    """물음마다 폼에서 받는 이름. 글마다 묻는 물음은 A 와 B 를 따로 받는다."""
+    return [name for q, _, kind in questions for name in ((f"{q}_A", f"{q}_B") if kind == "each" else (q,))]
+
+
+def judge_page(items, answers, i, meta):
     done = sum(1 for it in items if it["id"] in answers)
     head = (f"<!doctype html><html lang='ko'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
             f"<title>글 판정</title><style>{JUDGE_CSS}</style></head><body><header><b>글 판정 {done}/{len(items)}</b>"
@@ -1116,18 +1150,29 @@ def judge_page(items, answers, i):
                 f"<div class='done'><h2>아직 고르지 않은 쌍이 {len(left)}개 있습니다</h2><p><a href='/?i={left[0]}'>처음 남은 쌍으로 가기</a></p></div>")
         return head + body + "</main></body></html>"
     it, prev = items[i], answers.get(items[i]["id"], {})
-    qs = "".join(f"<div class='q'><span>{label}</span>" + "".join(
-        f"<label><input type='radio' name='{key}' value='{v}' required {'checked' if prev.get(key) == v else ''}>{t}</label>"
-        for v, t in (("A", "A"), ("tie", "비슷"), ("B", "B"))) + "</div>" for key, label in QUESTIONS)
-    return (head + f"<details><summary>{html.escape(it['kind'] or '종류 없음')} · 이 요청으로 쓴 글입니다 (펼쳐 보기)</summary><pre>{html.escape(it['ask'])}</pre></details>"
+    radio = lambda name, v, t: (f"<label><input type='radio' name='{name}' value='{v}' required "
+                                f"{'checked' if prev.get(name) == v else ''}>{t}</label>")
+    qs = ""
+    for key, label, kind in meta["questions"]:
+        if kind == "each":
+            qs += (f"<div class='q'><span>{label}</span>" + "".join(
+                f"<em>{s}</em>" + radio(f"{key}_{s}", "yes", "그렇다") + radio(f"{key}_{s}", "no", "아니다") for s in "AB") + "</div>")
+        else:
+            qs += f"<div class='q'><span>{label}</span>" + "".join(radio(key, v, t) for v, t in (("A", "A"), ("tie", "비슷"), ("B", "B"))) + "</div>"
+    ask = (f"<div class='ask'><b>{html.escape(it['kind'] or '종류 없음')} · 이 요청으로 쓴 글입니다</b><p>{html.escape(it['ask'])}</p></div>"
+           if meta["set"] == "cases" else
+           f"<details><summary>{html.escape(it['kind'] or '종류 없음')} · 이 요청으로 쓴 글입니다 (펼쳐 보기)</summary><pre>{html.escape(it['ask'])}</pre></details>")
+    return (head + ask +
             f"<div class='docs'><article><span class='tag'>A</span>{md_html(it['A'])}</article><article><span class='tag'>B</span>{md_html(it['B'])}</article></div>"
             f"<form method='post' action='/save'><input type='hidden' name='i' value='{i}'>{qs}"
             f"<textarea name='memo' placeholder='고른 까닭이나 눈에 띈 점 (안 써도 됩니다)'>{html.escape(prev.get('memo', ''))}</textarea>"
             "<button>저장하고 다음 쌍</button></form></main></body></html>")
 
 
+
 def serve_judge(folder, items, port):
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    meta = judge_meta(folder)
     import urllib.parse
     import webbrowser
 
@@ -1150,12 +1195,12 @@ def serve_judge(folder, items, port):
             answers = judge_answers(folder)
             first = next((n for n, it in enumerate(items) if it["id"] not in answers), len(items))
             i = int(q["i"][0]) if q.get("i", [""])[0].isdigit() else first
-            self.send(200, judge_page(items, answers, min(i, len(items))))
+            self.send(200, judge_page(items, answers, min(i, len(items)), meta))
 
         def do_POST(self):
             form = urllib.parse.parse_qs(self.rfile.read(int(self.headers.get("Content-Length", 0))).decode("utf-8"))
             i = int(form.get("i", ["0"])[0])
-            row = {"id": items[i]["id"], **{k: form.get(k, [""])[0] for k, _ in QUESTIONS},
+            row = {"id": items[i]["id"], **{k: form.get(k, [""])[0] for k in judge_fields(meta["questions"])},
                    "memo": form.get("memo", [""])[0].strip(), "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
             with open(folder / "answers.jsonl", "a", encoding="utf-8") as f:
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -1184,32 +1229,64 @@ def binom_p(k, n):
 def judge_section():
     out = []
     for folder in sorted(JUDGE.iterdir()) if JUDGE.exists() else []:
-        answers, key = judge_answers(folder), json.loads((folder / "key.json").read_text(encoding="utf-8")) if (folder / "key.json").exists() else {}
-        answers = {k: v for k, v in answers.items() if k in key}
+        if not (folder / "key.json").exists():
+            continue
+        meta, key = judge_meta(folder), json.loads((folder / "key.json").read_text(encoding="utf-8"))
+        items = {it["id"]: it for it in json.loads((folder / "items.json").read_text(encoding="utf-8"))}
+        answers = {k: v for k, v in judge_answers(folder).items() if k in key}
         if not answers:
             continue
-        side = lambda jid, v: "tie" if v not in ("A", "B") else key[jid]["A"] if v == "A" else ("off" if key[jid]["A"] == "on" else "on")
-        lines = ["| 물음 | 켠 글 | 끈 글 | 비슷 | 켠 글을 고른 비율 | p |", "|---" * 6 + "|"]
-        for q, label in QUESTIONS:
-            c = Counter(side(j, a.get(q)) for j, a in answers.items())
-            n = c["on"] + c["off"]
-            p = binom_p(c["on"], n)
-            lines.append(f"| {label} | {c['on']} | {c['off']} | {c['tie']} | {c['on'] / n:.0%} | {'' if p is None else f'{p:.3f}'} |" if n else
-                         f"| {label} | 0 | 0 | {c['tie']} |  |  |")
-        by = ["| 출처 | 쌍 | 전체로 켠 글 | 끈 글 | 비슷 |", "|---" * 5 + "|"]
-        for src in sorted({key[j]["source"] for j in answers}):
-            c = Counter(side(j, a.get("overall")) for j, a in answers.items() if key[j]["source"] == src)
-            by.append(f"| {src} | {sum(c.values())} | {c['on']} | {c['off']} | {c['tie']} |")
-        mark = lambda j: "[확인 필요" in (DATA / key[j]["on"]).read_text(encoding="utf-8")
-        for has in (True, False):
-            c = Counter(side(j, a.get("overall")) for j, a in answers.items() if mark(j) == has)
-            by.append(f"| 켠 글에 [확인 필요] {'있음' if has else '없음'} | {sum(c.values())} | {c['on']} | {c['off']} | {c['tie']} |")
-        out.append(f"### 사람 쌍대 비교 {folder.name}\n\n같은 요청으로 끄고, 켜고 쓴 글을 A 와 B 에 무작위로 놓고 사람이 골랐다. "
-                   f"판정자는 어느 쪽이 켠 글인지 모른다. {len(answers)}/{len(key)}쌍을 골랐고, p 는 비슷을 뺀 부호 시험이다. "
-                   "켠 글은 모르는 사실을 `[확인 필요]` 로 비워 두어 이것만으로 켠 글을 알아볼 수도 있다. "
-                   "그래서 출처별 표 끝에 켠 글에 이 표시가 있는 쌍과 없는 쌍을 나눠 보인다.\n\n"
-                   + "\n".join(lines) + "\n\n" + "\n".join(by) + "\n")
+        other = {"A": "B", "B": "A"}
+        on_letter = lambda j: "A" if key[j]["A"] == "on" else "B"
+        side = lambda j, v: "tie" if v not in ("A", "B") else "on" if v == on_letter(j) else "off"
+        picks = [q for q in meta["questions"] if q[2] == "pick"]
+        eaches = [q for q in meta["questions"] if q[2] == "each"]
+        parts = []
+        if picks:
+            lines = ["| 물음 | 켠 글 | 끈 글 | 비슷 | 켠 글을 고른 비율 | p |", "|---" * 6 + "|"]
+            for q, label, _ in picks:
+                c = Counter(side(j, a.get(q)) for j, a in answers.items())
+                n = c["on"] + c["off"]
+                p = binom_p(c["on"], n)
+                lines.append(f"| {label} | {c['on']} | {c['off']} | {c['tie']} | {c['on'] / n:.0%} | {'' if p is None else f'{p:.3f}'} |" if n else
+                             f"| {label} | 0 | 0 | {c['tie']} |  |  |")
+            parts.append("\n".join(lines))
+        if eaches:
+            lines = ["| 물음 | 켠 글이 그렇다 | 끈 글이 그렇다 | 켠 글만 그렇다 | 끈 글만 그렇다 | p |", "|---" * 6 + "|"]
+            for q, label, _ in eaches:
+                yes = lambda j, a, mode: a.get(f"{q}_{on_letter(j) if mode == 'on' else other[on_letter(j)]}") == "yes"
+                on_n = sum(yes(j, a, "on") for j, a in answers.items())
+                off_n = sum(yes(j, a, "off") for j, a in answers.items())
+                only_on = sum(yes(j, a, "on") and not yes(j, a, "off") for j, a in answers.items())
+                only_off = sum(yes(j, a, "off") and not yes(j, a, "on") for j, a in answers.items())
+                p = binom_p(only_on, only_on + only_off)
+                lines.append(f"| {label} | {on_n}/{len(answers)} | {off_n}/{len(answers)} | {only_on} | {only_off} | {'' if p is None else f'{p:.3f}'} |")
+            parts.append("\n".join(lines))
+        first = picks[0][0] if picks else None
+        if first:
+            by = ["| 출처 | 쌍 | " + picks[0][1] + ": 켠 글 | 끈 글 | 비슷 |", "|---" * 5 + "|"]
+            for src in sorted({key[j]["source"] for j in answers}):
+                c = Counter(side(j, a.get(first)) for j, a in answers.items() if key[j]["source"] == src)
+                by.append(f"| {src} | {sum(c.values())} | {c['on']} | {c['off']} | {c['tie']} |")
+            if meta["set"] == "pairs":
+                mark = lambda j: "[확인 필요" in items[j][on_letter(j)]
+                for has in (True, False):
+                    c = Counter(side(j, a.get(first)) for j, a in answers.items() if mark(j) == has)
+                    by.append(f"| 켠 글에 [확인 필요] {'있음' if has else '없음'} | {sum(c.values())} | {c['on']} | {c['off']} | {c['tie']} |")
+            parts.append("\n".join(by))
+        if meta["set"] == "pairs":
+            note = ("같은 요청으로 끄고, 켜고 쓴 글을 A 와 B 에 무작위로 놓고 사람이 골랐다. 판정자는 어느 쪽이 켠 글인지 모른다. "
+                    f"{len(answers)}/{len(key)}쌍을 골랐고, p 는 비슷을 뺀 부호 시험이다. "
+                    "켠 글은 모르는 사실을 `[확인 필요]` 로 비워 두어 이것만으로 켠 글을 알아볼 수도 있다. "
+                    "그래서 출처별 표 끝에 켠 글에 이 표시가 있는 쌍과 없는 쌍을 나눠 보인다.")
+        else:
+            note = ("짧은 요청으로 끄고, 켜고 쓴 글을 A 와 B 에 무작위로 놓고, 요청을 함께 보이며 사람이 골랐다. "
+                    "켠 글은 모두 모르는 사실을 `[확인 필요]` 로 비워 두어 판정자가 어느 쪽이 켠 글인지 알 수 있다. "
+                    f"{len(answers)}/{len(key)}쌍을 골랐다. 둘 중 고르는 물음의 p 는 비슷을 뺀 부호 시험이고, "
+                    "글마다 묻는 물음의 p 는 두 글의 답이 갈린 쌍만 센 부호 시험이다. 출처는 문서 종류다.")
+        out.append(f"### 사람 쌍대 비교 {folder.name}\n\n{note}\n\n" + "\n\n".join(parts) + "\n")
     return out
+
 
 
 def main():
@@ -1244,6 +1321,8 @@ def main():
     j.add_argument("--port", type=int, default=0)
     j.add_argument("--redo", action="store_true")
     j.add_argument("--agent", default="claude", help="이 에이전트로 쓴 끈 글과 켠 글에서 뽑는다")
+    j.add_argument("--set", default="pairs", choices=("pairs", "cases"), help="짝 묶음은 글솜씨를, 케이스 묶음은 지어낸 사실과 초안의 쓸모를 묻는다")
+    j.add_argument("--only", help="이 요청들에서만 뽑는다. 쉼표로 잇는다")
     a = ap.parse_args()
     {"gen": cmd_gen, "fetch": cmd_fetch, "pairs": cmd_pairs, "measure": cmd_measure, "report": cmd_report,
      "judge": cmd_judge}[a.cmd](a)

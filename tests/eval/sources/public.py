@@ -4,7 +4,7 @@
 어댑터는 두 가지이고 둘 다 표준 라이브러리만 쓴다(Python 3.9).
 
   fetch_kdca_health(out_dir, want=30)   국가건강정보포털의 환자 안내문
-  fetch_seoul_report(out_dir, want=30)  서울 정보소통광장 결재문서의 업무 보고
+  fetch_seoul_report(out_dir, want=30)  서울 정보소통광장 결재문서 가운데 보고서 서식의 계획·검토 보고
 
 문서 한 편은 <id>.md 와 <id>.json 두 파일로 남는다. <id>.md 에는 제목과 다듬은 마크다운 본문을 쓴다.
 <id>.json 에는 kind, label, source, date, date_basis, url, license 를 쓴다.
@@ -821,7 +821,7 @@ def _months(first='2020-01', last='2022-11'):
 
 
 def fetch_seoul_report(out_dir, want=30, fetcher=None, per_month_scan=12, listing='mayor'):
-    """서울 정보소통광장의 업무 보고 결재문서를 2020-01..2022-11 의 여러 달에 고루 나눠 모은다.
+    """서울 정보소통광장의 보고서 서식 결재문서를 2020-01..2022-11 의 여러 달에 고루 나눠 모은다.
 
     기본 목록은 부시장이상 결재문서다. 결재 칸과 도입문, Ⅰ/□/○ 절을 갖춘 보고서 서식의 보고가 든다.
     일반 결재문서 목록을 제목에 보고가 든 것으로 거르면 대개 소방서의 정형 공문이 나온다.
@@ -879,7 +879,7 @@ def fetch_seoul_report(out_dir, want=30, fetcher=None, per_month_scan=12, listin
                 if approved:
                     basis += ' (결재일자 %s in the document header)' % ' '.join(approved.split())
                 write_doc(out_dir, nid, _clean_title(title), lines, {
-                    'kind': 'work-report', 'label': '업무 보고', 'source': 'seoul-report',
+                    'kind': 'biz-report', 'label': '사업 계획·실적 보고서', 'source': 'seoul-report',
                     'date': produced, 'date_basis': basis,
                     'url': '%s/sanction/%s' % (SEOUL, nid),
                     'license': meta['license'],
