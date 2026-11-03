@@ -1003,8 +1003,16 @@ def _pptx_lines(root):
 
 
 def _hwpx_lines(root):
+    # 한 문단의 글은 서식이 바뀌는 곳마다 <hp:t> 로 나뉜다. "중기부" 와 ")는" 처럼 낱말 가운데서도 나뉘어 빈칸 없이 잇고,
+    # 문단 안의 탭과 줄바꿈만 빈칸으로 둔다. docx 의 run 과 같다
     def text(p):
-        return " ".join("".join(t.itertext()) for t in p.iter() if _tag(t) == "t").strip()
+        out = []
+        for t in p.iter():
+            if _tag(t) == "t":
+                out.append(t.text or "")
+                for c in t:
+                    out += [" " if _tag(c) in ("tab", "lineBreak") else "", c.tail or ""]
+        return re.sub(r"[ \t]+", " ", "".join(out)).strip()
 
     def walk(el, out):
         for c in el:
@@ -4616,7 +4624,7 @@ def selftest(th):
               and rv.rstrip().endswith(REVIEW_DOC), "검토 지침이 다르거나 페르소나가 실렸다")
         rv = review(th, kind="email", doc="본문이다.\n", source="공고다.")
         check(rv.rstrip().endswith("본문이다.") and "## 원문\n\n공고다." in rv, "검토 지침에 본문과 원문을 넣지 못한다")
-        # 문서 파일 읽기. 가장 작은 docx 와 pptx 를 만들어 제목, 목록, 굵은 글씨, 표, 슬라이드 경계가 마크다운 꼴로 나오는지 본다.
+        # 문서 파일 읽기. 가장 작은 docx 와 pptx, hwpx 를 만들어 제목, 목록, 굵은 글씨, 표, 슬라이드 경계가 마크다운 꼴로 나오는지 본다.
         with tempfile.TemporaryDirectory() as td:
             w = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
             with zipfile.ZipFile(Path(td) / "a.docx", "w") as z:
@@ -4637,6 +4645,15 @@ def selftest(th):
                                '</p:spTree></p:cSld></p:sld>')
             check(doc_file_text(Path(td) / "a.docx") == ("# 제목\n본문은 **굵게** 씁니다.\n- 항목\n| 칸 |", True), "docx 에서 글을 다르게 뽑는다")
             check(doc_file_text(Path(td) / "a.pptx") == ("# 둘째\n- 요점\n---\n# 열째\n- 요점", True), "pptx 에서 글을 다르게 뽑는다")
+            hp = 'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"'
+            with zipfile.ZipFile(Path(td) / "a.hwpx", "w") as z:
+                z.writestr("Contents/section0.xml", f'<hp:sec {hp}>'
+                           '<hp:p><hp:run><hp:t>중기부</hp:t></hp:run><hp:run><hp:t>(장관)</hp:t></hp:run><hp:run><hp:t>는 </hp:t></hp:run>'
+                           '<hp:run><hp:t>밝혔다.<hp:lineBreak/>이어  썼다.</hp:t></hp:run></hp:p>'
+                           '<hp:p><hp:run><hp:tbl><hp:tr><hp:tc><hp:subList><hp:p><hp:run><hp:t>칸</hp:t></hp:run></hp:p></hp:subList></hp:tc></hp:tr></hp:tbl></hp:run></hp:p>'
+                           '</hp:sec>')
+            check(doc_file_text(Path(td) / "a.hwpx") == ("중기부(장관)는 밝혔다. 이어 썼다.\n| 칸 |", True),
+                  "hwpx 에서 글을 다르게 뽑는다. 서식으로 나뉜 글 조각 사이에 빈칸을 넣으면 조사가 떨어진다")
             (Path(td) / "a.hwp").write_bytes(b"")
             try:
                 doc_file_text(Path(td) / "a.hwp")
