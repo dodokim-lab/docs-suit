@@ -224,6 +224,15 @@ def grade(case, calls, reply="", first=None):
     if not composes:
         return False, shown, "compose 를 부르지 않았다", None, None
     a = compose_args(composes[-1])
+    if expect == "conflict":
+        # 겹침 케이스는 재촉한 턴에 고른 값으로 쓴다. 그 턴에 compose 없이 check 만 부르면 첫 턴에서 기본값을 견주려고
+        # 부른 compose 가 마지막에 남는다. check 에는 compose 의 인자를 그대로 붙이므로 둘 가운데 나중 것을 본다.
+        a = compose_args([c for c in calls if c[:1] in (["compose"], ["check"]) and not {"--help", "-h"} & set(c)][-1])
+    handed = [c for c in calls if case.get("file") and c[:1] == ["check"] and len(c) > 1 and c[1].endswith(case["file"])]
+    if handed:
+        # 파일 케이스는 건네는 파일에 부른 마지막 check 의 값으로 본다. 발표 자료와 함께 원고를 따로 만들면
+        # 원고의 compose 가 마지막에 남는데, 그 파일은 사용자가 달라고 한 문서가 아니다.
+        a = compose_args(handed[-1])
     why = []
     if expect == "conflict" and reply and (wrote_first(first or calls) or not any(m in reply for m in case["mention"])):
         # 작업 폴더의 지침 파일이 docs-suit 와 다른 값을 정한 케이스. 첫 턴에서는 본문을 끝내 check 를 부르기 전에 겹친 값을
