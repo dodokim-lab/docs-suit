@@ -1211,6 +1211,21 @@ def body_lines(doc):
             if ln.strip() and not ln.lstrip().startswith(("#", "|", "```", "---", ">"))]
 
 
+# 발표 원고의 틀이 쓰라고 한 장 표시 `[3장]` 과 장 끝의 예상 시간 줄. 소리 내어 읽지 않는 줄이다.
+SCRIPT_PART = re.compile(r"^[*_]*\[\s*\d+\s*장[^\]]*\][*_]*$")
+SCRIPT_TIME = re.compile(r"^[*_(\[]*예상 시간")
+
+
+def spoken_lines(lines):
+    """발표 원고에서 소리 내어 읽는 줄. 장 표시가 있으면 첫 장 표시부터 마지막 예상 시간 줄까지만 원고로 본다.
+    그 앞뒤에 붙인 안내와 채울 곳 목록은 발표자가 읽지 않는다. 장 표시와 예상 시간 줄도 뺀다."""
+    marks = [i for i, ln in enumerate(lines) if SCRIPT_PART.match(ln)]
+    if marks:
+        times = [i for i, ln in enumerate(lines) if SCRIPT_TIME.match(ln) and i > marks[0]]
+        lines = lines[marks[0]:times[-1] + 1 if times else len(lines)]
+    return [ln for ln in lines if not SCRIPT_PART.match(ln) and not SCRIPT_TIME.match(ln)]
+
+
 def endings(lines):
     count = {k: 0 for k, _, _ in ENDING}
     for ln in lines:
@@ -1437,7 +1452,7 @@ def check_doc(doc, vals, chars, kind=None, th=None, words=None):
         ratio = sum(1 for ln in lines if re.match(LIST_MARK, ln)) / len(lines)
         ok = ratio >= 0.3 if pick("voice") in ("bullet", "gov") else ratio <= 0.5
         out.append(("voice", ok, f"목록 줄 {ratio:.0%}"))
-    size = len("\n".join(lines))
+    size = len("\n".join(spoken_lines(lines) if kind == "script" else lines))
     limit = int(chars * 1.1) if chars else None if kind == "slides" else LENGTH_LIMIT.get(pick("length"))
     if limit:
         out.append(("length", size <= limit, f"{size}자, 한도 {limit}자"))
@@ -4460,6 +4475,11 @@ def selftest(th):
           f"본문 검사가 어법, 강조, 분량을 다르게 잰다: {got}")
     got = {ax: ok for ax, ok, _ in check_doc("간다. 본다. 한다. 쓴다.\n" * 40, vals, 100)}
     check(got.get("register") is False and got.get("length") is False, f"본문 검사가 어법이나 글자수 한도를 놓친다: {got}")
+    # 발표 원고는 읽는 줄만 센다. 앞 안내와 끝의 채울 곳 목록, 장 표시, 예상 시간 줄은 분량에 넣지 않는다.
+    talk = "안내 " * 60 + "\n\n[1장 · 도입]\n\n" + "발표합니다. " * 10 + "\n\n예상 시간 30초\n\n채울 항목\n" + "목록 " * 60
+    sized = {k: v for k, ok, v in check_doc(talk, vals, 100, "script")}
+    check(sized.get("length", "").startswith(f"{len('발표합니다. ' * 10) - 1}자"),
+          f"발표 원고 분량이 읽는 줄 밖까지 센다: {sized.get('length')}")
 
     # 문장 규칙 패턴. 모든 값의 보기는 깨끗한 예문이라 error 패턴이 하나도 걸리면 안 된다.
     for name, tl in th.tells.items():

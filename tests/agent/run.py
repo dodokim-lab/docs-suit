@@ -255,7 +255,8 @@ def grade(case, calls, reply="", first=None):
 FOLLOWUP = "더 줄 정보는 없어. 모르는 곳은 [확인 필요]로 비워 두고 지금 써 줘."
 
 
-CHECKED = re.compile(r"check\s+-\s[^\n]*<<\s*'?(\w+)'?\n(.*?)\n\1(?:\n|$)", re.S)
+# Codex 는 명령을 `zsh -lc "…"` 로 감싸서 heredoc 끝 표시 뒤에 따옴표가 붙는다.
+CHECKED = re.compile(r"check\s+-\s[^\n]*<<\s*'?(\w+)'?\n(.*?)\n\1[\"']?(?:\n|$)", re.S)
 
 
 def checked_body(transcripts):
