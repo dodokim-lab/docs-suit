@@ -3,7 +3,7 @@
 // 로컬 화면(suit.py serve)과 다른 곳에 올린 사본은 주소가 달라서 아무것도 보내지 않는다.
 (function (root) {
   "use strict";
-  const CODE = ""; // GoatCounter 코드 이름. 비어 있으면 세지 않는다
+  const CODE = "docs-suit"; // GoatCounter 코드 이름. 비어 있으면 세지 않는다
   const on = Boolean(CODE) && root.location.hostname === "dodokim-lab.github.io";
 
   function send(path, event) {
