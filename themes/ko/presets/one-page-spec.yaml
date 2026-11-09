@@ -3,7 +3,7 @@
 
 preset:
   label: 한 장 기획서
-  desc: 기획서와 진행 보고를 문제와 해결, 효과 순서로, 표를 먼저 두고 한 쪽 안에 정리한다
+  desc: 기획서를 합쇼체 개조식으로, 표를 먼저 두고 한 쪽 안에 정리한다
   by: dodokim-lab
   class: planner
   featured: true

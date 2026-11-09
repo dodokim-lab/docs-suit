@@ -3,7 +3,7 @@
 
 preset:
   label: 평어체 설명 문서
-  desc: 위키와 설계 문서를 평어체 줄글로, 결론 먼저 한 쪽 안에 쓴다
+  desc: 위키와 설계 문서를 평어체 줄글로, 굵은 글씨 없이 쓴다
   by: dodokim-lab
   class: developer
   featured: true

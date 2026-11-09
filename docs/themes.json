@@ -2659,7 +2659,7 @@
   },
   "one-page-spec": {
    "label": "한 장 기획서",
-   "desc": "기획서와 진행 보고를 문제와 해결, 효과 순서로, 표를 먼저 두고 한 쪽 안에 정리한다",
+   "desc": "기획서를 합쇼체 개조식으로, 표를 먼저 두고 한 쪽 안에 정리한다",
    "by": "dodokim-lab",
    "class": "planner",
    "featured": "true",
@@ -2676,7 +2676,7 @@
   },
   "paper-draft": {
    "label": "논문 초고",
-   "desc": "논문과 연구계획서를 평어체로, 목적과 방법, 결과, 고찰 순서와 APA 참고문헌으로 쓴다",
+   "desc": "논문 초고를 평어체로, 목적과 방법, 결과, 고찰 순서와 APA 참고문헌으로 쓴다",
    "by": "dodokim-lab",
    "class": "researcher",
    "featured": "true",
@@ -2690,7 +2690,14 @@
     "emphasis": "none",
     "diagram": "table"
    },
-   "audiences": {}
+   "audiences": {
+    "professor": {
+     "sources": "apa"
+    },
+    "reviewer": {
+     "sources": "apa"
+    }
+   }
   },
   "plain-apply": {
    "label": "담백한 지원서",
@@ -2711,7 +2718,7 @@
   },
   "plain-doc": {
    "label": "평어체 설명 문서",
-   "desc": "위키와 설계 문서를 평어체 줄글로, 결론 먼저 한 쪽 안에 쓴다",
+   "desc": "위키와 설계 문서를 평어체 줄글로, 굵은 글씨 없이 쓴다",
    "by": "dodokim-lab",
    "class": "developer",
    "featured": "true",
@@ -2739,21 +2746,6 @@
     "terms": "explained",
     "length": "full",
     "sources": "footnote",
-    "emphasis": "none"
-   },
-   "audiences": {}
-  },
-  "weekly-brief": {
-   "label": "짧은 주간 보고",
-   "desc": "팀장님께 매주 올리는 보고를 결론 먼저, 개조식으로 짧게 쓴다",
-   "by": "dodokim-lab",
-   "class": "office",
-   "featured": "true",
-   "defaults": {
-    "skeleton": "bluf",
-    "voice": "bullet",
-    "register": "polite",
-    "length": "brief",
     "emphasis": "none"
    },
    "audiences": {}

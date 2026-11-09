@@ -3,7 +3,7 @@
 
 preset:
   label: 논문 초고
-  desc: 논문과 연구계획서를 평어체로, 목적과 방법, 결과, 고찰 순서와 APA 참고문헌으로 쓴다
+  desc: 논문 초고를 평어체로, 목적과 방법, 결과, 고찰 순서와 APA 참고문헌으로 쓴다
   by: dodokim-lab
   class: researcher
   featured: true
@@ -17,3 +17,8 @@ defaults:
   sources: apa
   emphasis: none
   diagram: table
+
+# 문서 종류가 권하는 출처 표기(보고서는 각주)를 이기려고 독자별 값에도 둔다.
+audiences:
+  professor: {sources: apa}
+  reviewer: {sources: apa}

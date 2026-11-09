@@ -294,8 +294,8 @@ Codex 를 열 때마다 저절로 띄우려면 `~/.codex/hooks.json` 에 훅 두
 
 ```sh
 python3 suit.py preset list                 # 조합 목록. 추천 표시가 있는 것이 앞에 온다
-python3 suit.py preset show weekly-brief    # 조합의 축 값
-python3 suit.py preset use weekly-brief     # 내 슬롯에 입힌다. 이전 슬롯은 .bak 으로 남는다
+python3 suit.py preset show friendly-blog   # 조합의 축 값
+python3 suit.py preset use friendly-blog    # 내 슬롯에 입힌다. 이전 슬롯은 .bak 으로 남는다
 ```
 
 3차와 4차 전직은 이 저장소에 기여해야 열립니다.
