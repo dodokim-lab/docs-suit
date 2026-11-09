@@ -95,7 +95,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from xml.parsers import expat
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 HERE = Path(__file__).resolve().parent
 DEFAULT_LANG = "ko"
 AXES_ORDER = ("visual-doc", "visual-deck", "voice", "register", "terms", "skeleton", "length",
