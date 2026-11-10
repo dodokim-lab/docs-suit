@@ -15,3 +15,11 @@ defaults:
   length: page
   sources: link
   emphasis: bold
+
+# 조합의 어법이 독자의 기본 어법을 이겨서, 윗사람과 바깥 독자에게 쓰는 글의 어법은 독자별 값으로 되돌린다.
+audiences:
+  manager: {register: polite}
+  stakeholder: {register: polite}
+  client: {register: polite}
+  listener: {register: polite}
+  recruiter: {register: polite}

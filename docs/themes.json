@@ -2655,7 +2655,23 @@
     "sources": "link",
     "emphasis": "bold"
    },
-   "audiences": {}
+   "audiences": {
+    "manager": {
+     "register": "polite"
+    },
+    "stakeholder": {
+     "register": "polite"
+    },
+    "client": {
+     "register": "polite"
+    },
+    "listener": {
+     "register": "polite"
+    },
+    "recruiter": {
+     "register": "polite"
+    }
+   }
   },
   "one-page-spec": {
    "label": "한 장 기획서",
@@ -2696,6 +2712,24 @@
     },
     "reviewer": {
      "sources": "apa"
+    },
+    "manager": {
+     "register": "polite"
+    },
+    "stakeholder": {
+     "register": "polite"
+    },
+    "client": {
+     "register": "polite"
+    },
+    "listener": {
+     "register": "polite"
+    },
+    "recruiter": {
+     "register": "polite"
+    },
+    "teammate": {
+     "register": "haeyo"
     }
    }
   },
@@ -2731,7 +2765,26 @@
     "emphasis": "none",
     "diagram": "table"
    },
-   "audiences": {}
+   "audiences": {
+    "manager": {
+     "register": "polite"
+    },
+    "stakeholder": {
+     "register": "polite"
+    },
+    "client": {
+     "register": "polite"
+    },
+    "listener": {
+     "register": "polite"
+    },
+    "recruiter": {
+     "register": "polite"
+    },
+    "teammate": {
+     "register": "haeyo"
+    }
+   }
   },
   "school-report": {
    "label": "과제 레포트",
@@ -2748,7 +2801,26 @@
     "sources": "footnote",
     "emphasis": "none"
    },
-   "audiences": {}
+   "audiences": {
+    "manager": {
+     "register": "polite"
+    },
+    "stakeholder": {
+     "register": "polite"
+    },
+    "client": {
+     "register": "polite"
+    },
+    "listener": {
+     "register": "polite"
+    },
+    "recruiter": {
+     "register": "polite"
+    },
+    "teammate": {
+     "register": "haeyo"
+    }
+   }
   }
  },
  "level": {

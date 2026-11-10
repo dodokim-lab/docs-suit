@@ -8,7 +8,7 @@ docs-suit 는 새 문서 종류와 테마 조합, 문장 규칙처럼 테마를 
 
 | 기여 | 더하거나 고칠 파일 | 함께 할 일 |
 |---|---|---|
-| 테마 조합 | `themes/ko/presets/<이름>.yaml` | `python3 suit.py preset export <이름> --by <GitHub 아이디> --desc "쓰임새 한 줄"` 로 지금 내 설정을 뽑아 넣습니다. `by` 는 PR 을 올린 계정과 같아야 하고, 소개는 어떤 글에 쓰는 조합인지 말해야 합니다 |
+| 테마 조합 | `themes/ko/presets/<이름>.yaml` | `python3 suit.py preset export <이름> --by <GitHub 아이디> --desc "쓰임새 한 줄"` 로 지금 내 설정을 뽑아 넣습니다. `by` 는 PR 을 올린 계정과 같아야 하고, 소개는 어떤 글에 쓰는 조합인지 말해야 합니다. 기본 어법이 평어체인 조합은 상사와 다른 팀처럼 합쇼체로 받는 독자의 어법을 `audiences` 에 합쇼체로 적어야 selftest 가 통과합니다 |
 | 새 문서 종류 | `themes/ko/kinds/<종류>.md` | `defaults.yaml` 의 `kinds` 에 종류를 더하고, 틀이 꼭 쓰라고 한 절은 `must` 에 낱말로 적습니다. 어느 클래스의 주력 문서에 넣어야 selftest 가 통과하고, `tests/agent/cases.py` 에도 케이스를 하나 더합니다 |
 | 새 값 | `themes/ko/<축>/<값>.md` | `axes.yaml` 에 한 줄을 더합니다. 끝의 `## 보기` 는 다른 값과 견줄 수 있게 정류장 대기 시간 조사 예문으로 씁니다 |
 | 써 보기 템플릿 | `themes/ko/trials/<이름>.md` | 웹 판 써 보기에 뜨는 예시 요청입니다. 정류장 대기 시간 조사에서 지어낸 사실로만 씁니다 |

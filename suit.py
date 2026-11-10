@@ -4408,6 +4408,18 @@ def selftest(th):
         for aud, vals in (v.get("audiences") or {}).items():
             check(aud in th.audiences and isinstance(vals, dict), f"조합 {k} 의 독자 {aud} 를 모른다")
             check_profile(f"조합 {k} 독자 {aud}", vals if isinstance(vals, dict) else {}, False)
+        # 조합의 기본 어법은 독자의 기본 어법을 이긴다. 합쇼체로 받는 독자의 글이 평어체로 내려가면 안 된다
+        worn = {"defaults": v.get("defaults") or {},
+                "audiences": {a: x for a, x in (v.get("audiences") or {}).items() if a in th.audiences and isinstance(x, dict)}}
+        for aud, spec in th.audiences.items():
+            if spec.get("register") != "polite":
+                continue
+            try:
+                got = resolve(th, audiences=[aud], profile=worn)[0]["register"][0]
+            except Missing:
+                continue
+            check(got != "plain", f"조합 {k} 를 입히면 독자 {aud} 에게 쓰는 글이 평어체가 된다. "
+                                  f"조합의 audiences 에 `{aud}: {{register: polite}}` 를 둔다")
 
     # 웹 써 보기의 템플릿. 클래스마다 하나 이상 있고, 고른 종류와 독자가 실제 값이라야 지침을 조립한다
     for k, v in th.trials.items():
